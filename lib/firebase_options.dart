@@ -40,9 +40,9 @@ class DefaultFirebaseOptions {
     }
   }
 
-  static const FirebaseOptions web = FirebaseOptions(
+  static final FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyAKuao1ZArELaBsUx8pTvG7eElspoOUCWg',
-    appId: '1:153034379474:web:a17fb65574132d3571dd0b',
+    appId: '1:153034379474:web:a17fb655b32d3571dd0b',
     messagingSenderId: '153034379474',
     projectId: 'doctor-booking-system-ef2c8',
     authDomain: 'doctor-booking-system-ef2c8.firebaseapp.com',
@@ -50,7 +50,7 @@ class DefaultFirebaseOptions {
     measurementId: 'G-NNGJKSGC4V',
   );
 
-  static const FirebaseOptions android = FirebaseOptions(
+  static final FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyCYERZzdkjTkY9QNZLR81UeBvSgYPJzswQ',
     appId: '1:153034379474:android:456b0864a388295c71dd0b',
     messagingSenderId: '153034379474',
@@ -58,7 +58,7 @@ class DefaultFirebaseOptions {
     storageBucket: 'doctor-booking-system-ef2c8.firebasestorage.app',
   );
 
-  static const FirebaseOptions ios = FirebaseOptions(
+  static final FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAm-Lu7Kn0gbI1WlesFOjElegbHvdA954w',
     appId: '1:153034379474:ios:0dd8390c9a074c5271dd0b',
     messagingSenderId: '153034379474',
@@ -67,7 +67,7 @@ class DefaultFirebaseOptions {
     iosBundleId: 'com.example.dbs',
   );
 
-  static const FirebaseOptions macos = FirebaseOptions(
+  static final FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyAm-Lu7Kn0gbI1WlesFOjElegbHvdA954w',
     appId: '1:153034379474:ios:0dd8390c9a074c5271dd0b',
     messagingSenderId: '153034379474',
@@ -76,7 +76,7 @@ class DefaultFirebaseOptions {
     iosBundleId: 'com.example.dbs',
   );
 
-  static const FirebaseOptions windows = FirebaseOptions(
+  static final FirebaseOptions windows = FirebaseOptions(
     apiKey: 'AIzaSyAKuao1ZArELaBsUx8pTvG7eElspoOUCWg',
     appId: '1:153034379474:web:795feb0d0154316171dd0b',
     messagingSenderId: '153034379474',
