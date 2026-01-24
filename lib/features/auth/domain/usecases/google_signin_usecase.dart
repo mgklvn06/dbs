@@ -1,12 +1,12 @@
 import 'package:dbs/features/auth/domain/entities/user.dart';
 import 'package:dbs/features/auth/domain/repositories/auth_repository.dart';
 
-class RegisterUseCase {
+class GoogleSignInUseCase {
   final AuthRepository repository;
 
-  RegisterUseCase(this.repository);
+  GoogleSignInUseCase(this.repository);
 
-  Future<UserEntity> call(String email, String password) {
-    return repository.register(email, password);
+  Future<UserEntity> call() {
+    return repository.signInWithGoogle();
   }
 }
