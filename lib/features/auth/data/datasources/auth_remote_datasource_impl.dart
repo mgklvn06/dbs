@@ -1,31 +1,35 @@
 import 'package:dbs/features/auth/data/models/user_models.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
 import 'auth_remote_datasource.dart';
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   final FirebaseAuth firebaseAuth;
-  final GoogleSignIn googleSignIn;
 
   AuthRemoteDataSourceImpl({
     required this.firebaseAuth,
-    required this.googleSignIn,
   });
 
   @override
   Future<UserModel> login(String email, String password) async {
-    final credential = await firebaseAuth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+    try {
+      final credential = await firebaseAuth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      ).timeout(const Duration(seconds: 10));
 
-    final user = credential.user!;
-    return UserModel.fromFirebase(
-      id: user.uid,
-      email: user.email!,
-      avatarUrl: user.photoURL,
-    );
+      final user = credential.user!;
+      return UserModel.fromFirebase(
+        id: user.uid,
+        email: user.email!,
+        avatarUrl: user.photoURL,
+      );
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'invalid-credential') {
+        throw Exception('Invalid email or password. Please check your credentials or register if you don\'t have an account.');
+      }
+      throw Exception(e.message ?? 'Authentication failed');
+    }
   }
 
   @override
@@ -45,31 +49,21 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
   @override
   Future<UserModel> signInWithGoogle() async {
-    final googleUser = await googleSignIn.signIn();
-    if (googleUser == null) {
-      throw Exception('Google sign-in was cancelled by the user.');
-    }
-    final googleAuth = await googleUser.authentication;
+    final googleProvider = GoogleAuthProvider();
 
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
+    final userCredential =
+        await firebaseAuth.signInWithProvider(googleProvider);
 
-    final authResult =
-        await firebaseAuth.signInWithCredential(credential);
-
-    final user = authResult.user!;
+    final user = userCredential.user!;
     return UserModel.fromFirebase(
       id: user.uid,
       email: user.email!,
       avatarUrl: user.photoURL,
     );
-  }
+   }
 
   @override
   Future<void> logout() async {
-    await googleSignIn.signOut();
     await firebaseAuth.signOut();
   }
 }

@@ -9,10 +9,6 @@ class LoginRequested extends AuthEvent {
   const LoginRequested(this.email, this.password);
 }
 
-class GoogleLoginRequested extends AuthEvent {
-  const GoogleLoginRequested();
-}
-
 class LogoutRequested extends AuthEvent {
   const LogoutRequested();
 }
@@ -22,4 +18,12 @@ class RegisterRequested extends AuthEvent {
   final String password;
 
   const RegisterRequested(this.email, this.password);
+}
+
+class GoogleLoginRequested extends AuthEvent {
+  const GoogleLoginRequested();
+}
+
+class AuthCheckRequested extends AuthEvent {
+  const AuthCheckRequested();
 }
