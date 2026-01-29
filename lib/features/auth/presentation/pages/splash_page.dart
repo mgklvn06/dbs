@@ -1,5 +1,6 @@
 import 'package:dbs/config/routes.dart';
 import 'package:dbs/features/auth/presentation/bloc/auth_bloc.dart';
+import 'package:dbs/features/auth/presentation/bloc/auth_event.dart';
 import 'package:dbs/features/auth/presentation/bloc/auth_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -17,7 +18,7 @@ class _SplashPageState extends State<SplashPage> {
     super.initState();
 
     // 🔑 Trigger auth check ONCE
-    context.read<AuthBloc>().add(AuthCheckRequested());
+    context.read<AuthBloc>().add(const AuthCheckRequested());
   }
 
   @override

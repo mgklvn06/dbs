@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-// import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-// ignore: unused_import
 import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/profile/presentation/pages/profile_setup_page.dart';
-// ignore: unused_import
 import '../../features/home/presentation/pages/home_page.dart';
+import '../../features/admin/presentation/pages/admin_dashboard.dart';
+import '../../features/doctor/presentation/pages/doctor_profile_page.dart';
 
 class AuthGuard extends StatelessWidget {
   final Widget unauthenticated;
@@ -22,11 +22,8 @@ class AuthGuard extends StatelessWidget {
       return unauthenticated;
     }
 
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get(),
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const _GuardLoading();
@@ -41,7 +38,7 @@ class AuthGuard extends StatelessWidget {
         }
 
         final data = snapshot.data!.data();
-        final role = data?['role'];
+        final role = data?['role'] as String?;
 
         if (role == null) {
           return const ProfileSetupPage();
@@ -49,7 +46,9 @@ class AuthGuard extends StatelessWidget {
 
         switch (role) {
           case 'admin':
+            return const AdminDashboardPage();
           case 'doctor':
+            return const DoctorProfilePage();
           case 'patient':
             return authenticated;
           default:
@@ -58,41 +57,6 @@ class AuthGuard extends StatelessWidget {
       },
     );
   }
-}
-
-class FirebaseFirestore {
-  FirebaseFirestore._privateConstructor();
-
-  static final FirebaseFirestore instance = FirebaseFirestore._privateConstructor();
-
-  CollectionReference collection(String path) {
-    return CollectionReference();
-  } 
-}
-
-class CollectionReference {
-  DocumentReference doc(String id) {
-    return DocumentReference();
-  }
-}
-
-class DocumentReference {
-  Future<DocumentSnapshot> get() async {
-    // Simulate a network call
-    // Return a dummy document snapshot
-    return DocumentSnapshot({'role': 'patient'}, true);
-  }
-}
-
-class DocumentSnapshot {
-  final Map<String, dynamic>? _data;
-  final bool _exists;
-
-  DocumentSnapshot(this._data, this._exists);
-
-  bool get exists => _exists;
-
-  Map<String, dynamic>? data() => _data;
 }
 
 class _GuardLoading extends StatelessWidget {

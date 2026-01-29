@@ -1,69 +1,98 @@
-import 'package:dbs/features/auth/data/models/user_models.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'auth_remote_datasource.dart';
+import '../models/user_models.dart';
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
-  final FirebaseAuth firebaseAuth;
+  final FirebaseAuth _firebaseAuth;
+  final GoogleSignIn _googleSignIn;
 
   AuthRemoteDataSourceImpl({
-    required this.firebaseAuth,
-  });
+    required FirebaseAuth firebaseAuth,
+    required GoogleSignIn googleSignIn,
+  })  : _firebaseAuth = firebaseAuth,
+        _googleSignIn = googleSignIn;
 
   @override
   Future<UserModel> login(String email, String password) async {
-    try {
-      final credential = await firebaseAuth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      ).timeout(const Duration(seconds: 10));
-
-      final user = credential.user!;
-      return UserModel.fromFirebase(
-        id: user.uid,
-        email: user.email!,
-        avatarUrl: user.photoURL,
-      );
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'invalid-credential') {
-        throw Exception('Invalid email or password. Please check your credentials or register if you don\'t have an account.');
-      }
-      throw Exception(e.message ?? 'Authentication failed');
-    }
+    final userCredential = await _firebaseAuth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+    return UserModel.fromFirebase(
+      userCredential.user!,
+      id: userCredential.user!.uid,
+      email: userCredential.user!.email!,
+      avatarUrl: userCredential.user!.photoURL,
+    );
   }
 
   @override
   Future<UserModel> register(String email, String password) async {
-    final credential = await firebaseAuth.createUserWithEmailAndPassword(
+    final userCredential = await _firebaseAuth.createUserWithEmailAndPassword(
       email: email,
       password: password,
     );
-
-    final user = credential.user!;
     return UserModel.fromFirebase(
-      id: user.uid,
-      email: user.email!,
-      avatarUrl: user.photoURL,
+      userCredential.user!,
+      id: userCredential.user!.uid,
+      email: userCredential.user!.email!,
+      avatarUrl: userCredential.user!.photoURL,
     );
   }
 
   @override
   Future<UserModel> signInWithGoogle() async {
-    final googleProvider = GoogleAuthProvider();
+    UserCredential userCredential;
 
-    final userCredential =
-        await firebaseAuth.signInWithProvider(googleProvider);
+    if (kIsWeb) {
+      // On web, use Firebase's recommended approach: GoogleAuthProvider with signInWithPopup
+      final GoogleAuthProvider googleProvider = GoogleAuthProvider();
+      googleProvider.addScope('email');
+      googleProvider.addScope('profile');
+      // Allow account selection in the popup
+      googleProvider.setCustomParameters({
+        'prompt': 'select_account',
+      });
 
-    final user = userCredential.user!;
+      userCredential = await _firebaseAuth.signInWithPopup(googleProvider);
+    } else {
+      // For mobile platforms, use the google_sign_in plugin
+      GoogleSignInAccount? googleUser = await _googleSignIn.signInSilently();
+
+      if (googleUser == null) {
+        googleUser = await _googleSignIn.signIn();
+      }
+
+      if (googleUser == null) {
+        throw FirebaseAuthException(
+          code: 'CANCELLED',
+          message: 'Google sign-in aborted',
+        );
+      }
+
+      final googleAuth = await googleUser.authentication;
+
+      final credential = GoogleAuthProvider.credential(
+        idToken: googleAuth.idToken,
+        accessToken: googleAuth.accessToken,
+      );
+
+      userCredential = await _firebaseAuth.signInWithCredential(credential);
+    }
+
     return UserModel.fromFirebase(
-      id: user.uid,
-      email: user.email!,
-      avatarUrl: user.photoURL,
+      userCredential.user!,
+      id: userCredential.user!.uid,
+      email: userCredential.user!.email!,
+      avatarUrl: userCredential.user!.photoURL,
     );
-   }
+  }
 
   @override
   Future<void> logout() async {
-    await firebaseAuth.signOut();
+    await _firebaseAuth.signOut();
+    await _googleSignIn.signOut();
   }
 }

@@ -1,3 +1,5 @@
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../../domain/entities/user.dart';
 
 class UserModel extends UserEntity {
@@ -7,7 +9,7 @@ class UserModel extends UserEntity {
     super.avatarUrl,
   });
 
-  factory UserModel.fromFirebase({
+  factory UserModel.fromFirebase(User user, {
     required String id,
     required String email,
     String? avatarUrl,

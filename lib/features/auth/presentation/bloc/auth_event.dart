@@ -27,3 +27,9 @@ class GoogleLoginRequested extends AuthEvent {
 class AuthCheckRequested extends AuthEvent {
   const AuthCheckRequested();
 }
+
+class UploadAvatarRequested extends AuthEvent {
+  final String filePath;
+
+  const UploadAvatarRequested(this.filePath);
+}

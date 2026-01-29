@@ -1,50 +1,65 @@
 import 'package:dbs/config/routes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:dbs/config/routes.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
+import '../../../../google_signin_btn.dart';
 
-class LoginPage extends StatelessWidget {
-  LoginPage({super.key});
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
 
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-        body: SafeArea(
-          child: BlocConsumer<AuthBloc, AuthState>(
-            listener: (context, state) {
-              if (state is AuthError) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(state.message),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              } else if (state is AuthAuthenticated) {
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  Routes.authRedirect,
-                  (route) => false,
-                );
-              }
-            },
-            builder: (context, state) {
-              return Stack(
-                children: [
-                  _buildContent(context),
-                  if (state is AuthLoading)
-                    const _LoadingOverlay(),
-                ],
+      body: SafeArea(
+        child: BlocConsumer<AuthBloc, AuthState>(
+          listener: (context, state) {
+            if (state is AuthError) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(state.message),
+                  behavior: SnackBarBehavior.floating,
+                ),
               );
-            },
-          ),
+            } else if (state is AuthAuthenticated) {
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                Routes.authRedirect,
+                (route) => false,
+              );
+            }
+          },
+          builder: (context, state) {
+            return Stack(
+              children: [
+                _buildContent(context),
+                if (state is AuthLoading) const _LoadingOverlay(),
+              ],
+            );
+          },
         ),
-      );
+      ),
+    );
   }
 
   Widget _buildContent(BuildContext context) {
@@ -145,16 +160,7 @@ class LoginPage extends StatelessWidget {
           const SizedBox(height: 16),
 
           // Google Sign In
-          SizedBox(
-            height: 48,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                context.read<AuthBloc>().add(const GoogleLoginRequested());
-              },
-              icon: const Icon(Icons.login),
-              label: const Text('Continue with Google'),
-            ),
-          ),
+          const GoogleSignInWebButton(),
 
           const SizedBox(height: 32),
 
@@ -176,7 +182,6 @@ class LoginPage extends StatelessWidget {
     );
   }
 }
-
 
 
 class _LoadingOverlay extends StatelessWidget {

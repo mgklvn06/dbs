@@ -37,6 +37,8 @@ dependencies:
   firebase_core: ^4.4.0
   get_it: ^9.2.0
   firebase_auth: ^6.1.4
+  cloud_firestore: ^6.1.2
+  google_sign_in: ^6.2.1
   dio: ^5.9.0
   flutter_bloc: ^9.1.1
   dartz: ^0.10.1

@@ -14,4 +14,10 @@ class AuthError extends AuthState {
   const AuthError(this.message);
 }
 
+class AvatarUploadSuccess extends AuthState {
+  final String avatarUrl;
+
+  const AvatarUploadSuccess(this.avatarUrl);
+}
+
 class AuthUnauthenticated extends AuthState {}

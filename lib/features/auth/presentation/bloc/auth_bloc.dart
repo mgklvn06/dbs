@@ -1,6 +1,13 @@
+// import 'package:dartz/dartz.dart';
+// import 'package:dbs/core/errors/failures.dart';
+// import 'package:dbs/features/auth/data/models/user_models.dart';
+// import 'package:dbs/features/auth/domain/entities/user.dart';
+// import 'package:dbs/features/auth/domain/repositories/auth_repository.dart';
+import 'package:dbs/features/auth/domain/usecases/google_signin_usecase.dart';
 import 'package:dbs/features/auth/domain/usecases/login_user.dart';
 import 'package:dbs/features/auth/domain/usecases/logout_user.dart';
 import 'package:dbs/features/auth/domain/usecases/register_user.dart';
+import 'package:dbs/features/auth/domain/usecases/upload_avatar_usecase.dart';
 // import 'package:dbs/features/auth/presentation/pages/splash_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -12,16 +19,22 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final LoginUseCase loginUseCase;
   final LogoutUseCase logoutUseCase;
   final RegisterUseCase registerUseCase;
+  final UploadAvatarUseCase uploadAvatarUseCase;
+  final GoogleSignInUseCase googleSignInUseCase;
 
   AuthBloc({
     required this.loginUseCase,
     required this.logoutUseCase,
     required this.registerUseCase,
+    required this.uploadAvatarUseCase,
+    required this.googleSignInUseCase,
   }) : super(AuthInitial()) {
     on<LoginRequested>(_onLogin);
     on<LogoutRequested>(_onLogout);
     on<RegisterRequested>(_onRegister);
     on<AuthCheckRequested>(_onAuthCheck);
+    on<UploadAvatarRequested>(_onUploadAvatar);
+    on<GoogleLoginRequested>(_onGoogleLogin);
 
   }
 
@@ -84,10 +97,34 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
   }
 
+  Future<void> _onUploadAvatar(
+    UploadAvatarRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(AuthLoading());
+    try {
+      final avatarUrl = await uploadAvatarUseCase(event.filePath);
+      emit(AvatarUploadSuccess(avatarUrl));
+    } catch (e) {
+      emit(AuthError(e.toString()));
+    }
+  }
 
+ Future<void> _onGoogleLogin(
+  GoogleLoginRequested event,
+  Emitter<AuthState> emit,
+) async {
+  emit(AuthLoading());
+
+  final result = await googleSignInUseCase();
+
+  result.fold(
+    (failure) {
+      emit(AuthError(failure.message));
+    },
+    (user) {
+      emit(AuthAuthenticated());
+    },
+  );
 }
-
-class AuthCheckRequested implements AuthEvent {
-  
 }
-
