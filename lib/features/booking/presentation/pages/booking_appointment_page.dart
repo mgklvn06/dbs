@@ -1,7 +1,9 @@
+import 'package:dbs/features/doctor/domain/usecases/get_doctors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get_it/get_it.dart';
+import 'package:dbs/features/doctor/domain/entities/doctor.dart';
 
 import '../../presentation/bloc/booking_bloc.dart';
 import '../../presentation/bloc/booking_event.dart';
@@ -17,12 +19,13 @@ class BookingAppointmentPage extends StatefulWidget {
 }
 
 class _BookingAppointmentPageState extends State<BookingAppointmentPage> {
-  final _doctorController = TextEditingController();
+  DoctorEntity? _selectedDoctor;
+  // ignore: unused_field
+  List<DoctorEntity>? _doctors;
   DateTime? _selectedDateTime;
 
   @override
   void dispose() {
-    _doctorController.dispose();
     super.dispose();
   }
 
@@ -42,7 +45,7 @@ class _BookingAppointmentPageState extends State<BookingAppointmentPage> {
   }
 
   void _submit() {
-    final doctorId = _doctorController.text.trim();
+  final doctorId = _selectedDoctor?.id ?? '';
     final dt = _selectedDateTime;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -68,9 +71,30 @@ class _BookingAppointmentPageState extends State<BookingAppointmentPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextField(
-                controller: _doctorController,
-                decoration: const InputDecoration(labelText: 'Doctor id (example)'),
+              FutureBuilder<List<DoctorEntity>>(
+                future: sl<GetDoctors>()(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Text('Failed to load doctors: ${snapshot.error}');
+                  }
+                  final doctors = snapshot.data ?? [];
+                  if (doctors.isEmpty) return const Text('No doctors available');
+                  return DropdownButtonFormField<DoctorEntity>(
+                    value: _selectedDoctor ?? doctors.first,
+                    items: doctors
+                        .map((d) => DropdownMenuItem(value: d, child: Text('${d.name} — ${d.specialty}')))
+                        .toList(),
+                    onChanged: (d) {
+                      setState(() {
+                        _selectedDoctor = d;
+                      });
+                    },
+                    decoration: const InputDecoration(labelText: 'Select doctor'),
+                  );
+                },
               ),
               const SizedBox(height: 12),
               ElevatedButton(onPressed: _pickDateTime, child: const Text('Pick date & time')),

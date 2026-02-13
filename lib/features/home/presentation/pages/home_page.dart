@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:dbs/config/routes.dart';
 
 class HomePage extends StatelessWidget {
   HomePage({super.key});
@@ -19,7 +20,7 @@ class HomePage extends StatelessWidget {
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
               // ignore: use_build_context_synchronously
-              Navigator.pushReplacementNamed(context, '/login');
+              Navigator.pushReplacementNamed(context, Routes.login);
             },
           ),
         ],
@@ -41,7 +42,7 @@ class HomePage extends StatelessWidget {
             const SizedBox(height: 16),
 
             Expanded(
-              child: GridView.count(
+        child: GridView.count(
                 crossAxisCount: 2,
                 mainAxisSpacing: 16,
                 crossAxisSpacing: 16,
@@ -127,7 +128,22 @@ class _ActionCard extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: () {
-        // Navigate later
+        switch (title) {
+          case 'Book Appointment':
+            Navigator.pushNamed(context, Routes.booking);
+            break;
+          case 'Doctors':
+            Navigator.pushNamed(context, Routes.doctorProfile);
+            break;
+          case 'My Appointments':
+            Navigator.pushNamed(context, Routes.myAppointments);
+            break;
+          case 'Profile':
+            Navigator.pushNamed(context, Routes.doctorProfile);
+            break;
+          default:
+            break;
+        }
       },
       child: Container(
         decoration: BoxDecoration(

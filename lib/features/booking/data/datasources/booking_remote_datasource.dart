@@ -5,6 +5,7 @@ abstract class BookingRemoteDataSource {
   Future<AppointmentModel> createAppointment(AppointmentModel appointment);
   Future<List<AppointmentModel>> getAppointmentsForUser(String userId);
   Future<List<AppointmentModel>> getAppointmentsForDoctor(String doctorId);
+  Future<List<AppointmentModel>> getAllAppointments();
   Future<void> updateAppointmentStatus(String appointmentId, String status);
 }
 
@@ -46,6 +47,15 @@ class BookingRemoteDataSourceImpl implements BookingRemoteDataSource {
   @override
   Future<List<AppointmentModel>> getAppointmentsForDoctor(String doctorId) async {
     final q = await _col.where('doctorId', isEqualTo: doctorId).get();
+    return q.docs.map((d) {
+      final model = d.data();
+      return AppointmentModel.fromMap({...model.toMap(), 'id': d.id});
+    }).toList();
+  }
+
+  @override
+  Future<List<AppointmentModel>> getAllAppointments() async {
+    final q = await _col.get();
     return q.docs.map((d) {
       final model = d.data();
       return AppointmentModel.fromMap({...model.toMap(), 'id': d.id});

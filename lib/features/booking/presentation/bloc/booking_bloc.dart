@@ -21,6 +21,8 @@ class BookingBloc extends Bloc<BookingEvent, BookingState> {
 	}) : super(BookingInitial()) {
 		on<BookAppointmentRequested>(_onBookAppointment);
 		on<LoadAppointmentsRequested>(_onLoadAppointments);
+		on<LoadAppointmentsForDoctorRequested>(_onLoadAppointmentsForDoctor);
+		on<LoadAllAppointmentsRequested>(_onLoadAllAppointments);
 		on<UpdateAppointmentStatusRequested>(_onUpdateStatus);
 	}
 
@@ -44,6 +46,26 @@ class BookingBloc extends Bloc<BookingEvent, BookingState> {
 		emit(BookingLoading());
 		try {
 			final list = await getAppointmentsForUser(event.userId);
+			emit(BookingListLoaded(list));
+		} catch (e) {
+			emit(BookingError(e.toString()));
+		}
+	}
+
+	Future<void> _onLoadAppointmentsForDoctor(LoadAppointmentsForDoctorRequested event, Emitter<BookingState> emit) async {
+		emit(BookingLoading());
+		try {
+			final list = await bookingRepository.getAppointmentsForDoctor(event.doctorId);
+			emit(BookingListLoaded(list));
+		} catch (e) {
+			emit(BookingError(e.toString()));
+		}
+	}
+
+	Future<void> _onLoadAllAppointments(LoadAllAppointmentsRequested event, Emitter<BookingState> emit) async {
+		emit(BookingLoading());
+		try {
+			final list = await bookingRepository.getAllAppointments();
 			emit(BookingListLoaded(list));
 		} catch (e) {
 			emit(BookingError(e.toString()));

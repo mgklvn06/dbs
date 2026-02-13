@@ -62,11 +62,15 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
         await FirebaseAuth.instance.signInWithCredential(credential);
       }
 
-      setState(() => _isLoading = false);
+  setState(() => _isLoading = false);
 
-      // Navigate to home
-      // ignore: use_build_context_synchronously
-      Navigator.pushReplacementNamed(context, Routes.home);
+  // Navigate to auth redirect so the AuthGuard can route by role
+  // ignore: use_build_context_synchronously
+  Navigator.pushReplacementNamed(context, Routes.authRedirect);
+
+  // Friendly confirmation
+  // ignore: use_build_context_synchronously
+  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signed in successfully')));
 
     } catch (e, st) {
       setState(() => _isLoading = false);

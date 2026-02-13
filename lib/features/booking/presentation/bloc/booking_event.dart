@@ -16,6 +16,16 @@ class LoadAppointmentsRequested extends BookingEvent {
   const LoadAppointmentsRequested(this.userId);
 }
 
+class LoadAppointmentsForDoctorRequested extends BookingEvent {
+  final String doctorId;
+
+  const LoadAppointmentsForDoctorRequested(this.doctorId);
+}
+
+class LoadAllAppointmentsRequested extends BookingEvent {
+  const LoadAllAppointmentsRequested();
+}
+
 class UpdateAppointmentStatusRequested extends BookingEvent {
   final String appointmentId;
   final String status;

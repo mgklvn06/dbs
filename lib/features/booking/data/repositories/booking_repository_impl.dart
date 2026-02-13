@@ -42,6 +42,34 @@ class BookingRepositoryImpl implements BookingRepository {
   }
 
   @override
+  Future<List<AppointmentEntity>> getAppointmentsForDoctor(String doctorId) async {
+    final models = await remote.getAppointmentsForDoctor(doctorId);
+    return models
+        .map((m) => AppointmentEntity(
+              id: m.id,
+              userId: m.userId,
+              doctorId: m.doctorId,
+              dateTime: m.dateTime,
+              status: m.status,
+            ))
+        .toList();
+  }
+
+  @override
+  Future<List<AppointmentEntity>> getAllAppointments() async {
+    final models = await remote.getAllAppointments();
+    return models
+        .map((m) => AppointmentEntity(
+              id: m.id,
+              userId: m.userId,
+              doctorId: m.doctorId,
+              dateTime: m.dateTime,
+              status: m.status,
+            ))
+        .toList();
+  }
+
+  @override
   Future<void> updateAppointmentStatus(String appointmentId, String status) async {
     return remote.updateAppointmentStatus(appointmentId, status);
   }
