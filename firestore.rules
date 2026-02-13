@@ -39,6 +39,26 @@ service cloud.firestore {
       return ['displayName', 'photoUrl', 'avatarUrl', 'lastLoginAt', 'updatedAt'];
     }
 
+    function canSelfSetInitialRole() {
+      return isSelf(request.auth.uid)
+          && resource.data.role == null
+          && isValidRole(request.resource.data.role)
+          && (request.resource.data.role != 'admin' || isAdminEmail())
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'uid',
+            'email',
+            'displayName',
+            'photoUrl',
+            'avatarUrl',
+            'role',
+            'status',
+            'isAdmin',
+            'createdAt',
+            'lastLoginAt',
+            'updatedAt'
+          ]);
+    }
+
     match /users/{uid} {
       allow read: if signedIn();
 
@@ -47,6 +67,7 @@ service cloud.firestore {
           && (request.resource.data.role != 'admin' || isAdminEmail());
 
       allow update: if isAdmin()
+          || canSelfSetInitialRole()
           || (isSelf(uid)
               && request.resource.data.role == resource.data.role
               && request.resource.data.diff(resource.data).changedKeys().hasOnly(userEditableKeys()));

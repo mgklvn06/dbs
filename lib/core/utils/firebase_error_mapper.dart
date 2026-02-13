@@ -3,6 +3,13 @@ String mapFirebaseAuthError(String raw) {
 
   if (msg.contains('user-not-found')) return 'No account found for that email.';
   if (msg.contains('wrong-password')) return 'The password is incorrect. Please try again.';
+  if (msg.contains('invalid-credential') || msg.contains('malformed') || msg.contains('expired')) {
+    return 'Invalid credentials. If you signed up with Google, you need to set a password first.';
+  }
+  if (msg.contains('operation-not-allowed')) {
+    return 'Email/password sign-in is disabled. Enable it in Firebase Auth.';
+  }
+  if (msg.contains('user-disabled')) return 'This account has been disabled.';
   if (msg.contains('invalid-email')) return 'The email address is invalid.';
   if (msg.contains('network-request-failed')) return 'Network error. Check your internet connection.';
   if (msg.contains('popup-blocked') || msg.contains('popup_closed_by_user')) return 'The sign-in popup was blocked or closed. Allow popups and try again.';

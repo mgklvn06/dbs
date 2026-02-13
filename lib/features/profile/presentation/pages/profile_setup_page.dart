@@ -63,8 +63,20 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         'lastLoginAt': now,
         'updatedAt': now,
       };
-      if (!userSnap.exists) userData['createdAt'] = now;
-      await userRef.set(userData, SetOptions(merge: true));
+      final existingRole = userSnap.data()?['role'];
+      if (!userSnap.exists || existingRole == null) {
+        userData['createdAt'] = now;
+        await userRef.set(userData, SetOptions(merge: true));
+      } else {
+        // Only update fields allowed by rules for self-updates.
+        await userRef.set({
+          'displayName': displayName,
+          'photoUrl': user.photoURL,
+          'avatarUrl': user.photoURL,
+          'lastLoginAt': now,
+          'updatedAt': now,
+        }, SetOptions(merge: true));
+      }
 
       switch (role) {
         case 'admin':
@@ -79,7 +91,10 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
     } catch (e) {
       // ignore: avoid_print
       print('Failed to save profile: $e');
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save profile')));
+      final msg = e is FirebaseException
+          ? 'Failed to save profile: ${e.code}'
+          : 'Failed to save profile';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -91,6 +106,16 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
       appBar: AppBar(
         title: const Text('Complete your profile'),
         automaticallyImplyLeading: false,
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+              if (!context.mounted) return;
+              Navigator.pushReplacementNamed(context, Routes.login);
+            },
+            child: const Text('Sign out'),
+          ),
+        ],
       ),
       body: AppBackground(
         child: SingleChildScrollView(
@@ -143,6 +168,15 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
               ElevatedButton(
                 onPressed: _isSaving ? null : _finishSetup,
                 child: _isSaving ? const CircularProgressIndicator() : const Text('Finish setup'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () async {
+                  await FirebaseAuth.instance.signOut();
+                  if (!context.mounted) return;
+                  Navigator.pushReplacementNamed(context, Routes.login);
+                },
+                child: const Text('Back to login'),
               ),
             ],
           ),
