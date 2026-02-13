@@ -33,6 +33,7 @@ class BookingBloc extends Bloc<BookingEvent, BookingState> {
 					userId: event.userId,
 					doctorId: event.doctorId,
 					dateTime: event.dateTime,
+					slotId: event.slotId,
 				);
 
 				final created = await bookAppointment(appointmentEntity);

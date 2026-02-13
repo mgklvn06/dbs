@@ -2,10 +2,10 @@ import '../../domain/entities/doctor.dart';
 
 class DoctorModel extends DoctorEntity {
   DoctorModel({
-    String? id,
-    required String name,
-    required String specialty,
-  }) : super(id: id, name: name, specialty: specialty);
+    super.id,
+    required super.name,
+    required super.specialty,
+  });
 
   factory DoctorModel.fromMap(Map<String, dynamic> map) {
     return DoctorModel(

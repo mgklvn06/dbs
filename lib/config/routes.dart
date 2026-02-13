@@ -17,6 +17,7 @@ import '../features/booking/presentation/pages/admin_appointments_page.dart';
 import '../features/booking/presentation/pages/doctor_appointments_page.dart';
 import '../features/booking/presentation/pages/patient_appointments_page.dart';
 import '../features/doctor/presentation/pages/doctor_profile_page.dart';
+import '../features/doctor/domain/entities/doctor.dart';
 import '../features/schedule/presentation/pages/schedule_page.dart';
 
 class Routes {
@@ -59,7 +60,11 @@ class Routes {
     },
   myAppointments: (_) => const PatientAppointmentsPage(),
     booking: (_) => const BookingFlowPage(),
-  bookingAppointment: (_) => const BookingAppointmentPage(),
+  bookingAppointment: (context) {
+    final arg = ModalRoute.of(context)?.settings.arguments;
+    final doctor = (arg is DoctorEntity) ? arg : null;
+    return BookingAppointmentPage(initialDoctor: doctor);
+  },
     doctorProfile: (_) => const DoctorProfilePage(),
     schedule: (_) => const SchedulePage(),
     authDebug: (_) => const AuthDebugPage(),

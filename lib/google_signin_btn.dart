@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -22,6 +24,135 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
 
   bool _isLoading = false;
 
+  bool _hasProvider(User user, String providerId) {
+    return user.providerData.any((p) => p.providerId == providerId);
+  }
+
+  Future<void> _maybeLinkPassword() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final hasGoogle = _hasProvider(user, 'google.com');
+    final hasPassword = _hasProvider(user, 'password');
+    final email = user.email;
+
+    if (!hasGoogle || hasPassword || email == null || email.isEmpty) return;
+
+    final password = await _promptForPassword(email);
+    if (password == null) return;
+
+    try {
+      final credential = EmailAuthProvider.credential(email: email, password: password);
+      await user.linkWithCredential(credential);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password linked. You can now sign in with email and password.')),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      final message = switch (e.code) {
+        'provider-already-linked' => 'Password is already linked to this account.',
+        'email-already-in-use' => 'Email already in use by another account.',
+        'weak-password' => 'Password is too weak.',
+        'requires-recent-login' => 'Please sign in again and retry.',
+        'operation-not-allowed' => 'Email/Password provider is disabled in Firebase Auth.',
+        _ => e.message ?? 'Failed to link password.',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to link password: $e')));
+    }
+  }
+
+  Future<String?> _promptForPassword(String email) async {
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+    bool obscure = true;
+    String? error;
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Set a password'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Enable email login for $email'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: obscure,
+                    decoration: const InputDecoration(
+                      labelText: 'New password',
+                      prefixIcon: Icon(Icons.lock_outline),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmController,
+                    obscureText: obscure,
+                    decoration: const InputDecoration(
+                      labelText: 'Confirm password',
+                      prefixIcon: Icon(Icons.lock_outline),
+                    ),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      error!,
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: !obscure,
+                        onChanged: (v) => setState(() => obscure = !(v ?? false)),
+                      ),
+                      const Text('Show password'),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Skip'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final p1 = passwordController.text;
+                    final p2 = confirmController.text;
+                    if (p1.length < 6) {
+                      setState(() => error = 'Password must be at least 6 characters.');
+                      return;
+                    }
+                    if (p1 != p2) {
+                      setState(() => error = 'Passwords do not match.');
+                      return;
+                    }
+                    Navigator.pop(dialogContext, p1);
+                  },
+                  child: const Text('Link password'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    passwordController.dispose();
+    confirmController.dispose();
+    return result;
+  }
+
   Future<void> _handleSignIn() async {
     setState(() => _isLoading = true);
 
@@ -41,9 +172,7 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
         // For mobile platforms, use the google_sign_in plugin
         GoogleSignInAccount? account = await _googleSignIn.signInSilently();
 
-        if (account == null) {
-          account = await _googleSignIn.signIn();
-        }
+        account ??= await _googleSignIn.signIn();
 
         if (account == null) {
           setState(() => _isLoading = false);
@@ -62,15 +191,18 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
         await FirebaseAuth.instance.signInWithCredential(credential);
       }
 
-  setState(() => _isLoading = false);
+      setState(() => _isLoading = false);
 
-  // Navigate to auth redirect so the AuthGuard can route by role
-  // ignore: use_build_context_synchronously
-  Navigator.pushReplacementNamed(context, Routes.authRedirect);
+      if (!mounted) return;
+      await _maybeLinkPassword();
 
-  // Friendly confirmation
-  // ignore: use_build_context_synchronously
-  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signed in successfully')));
+      // Navigate to auth redirect so the AuthGuard can route by role
+      // ignore: use_build_context_synchronously
+      Navigator.pushReplacementNamed(context, Routes.authRedirect);
+
+      // Friendly confirmation
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signed in successfully')));
 
     } catch (e, st) {
       setState(() => _isLoading = false);
@@ -133,17 +265,28 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Column(
       children: [
         if (_isLoading)
-          const CircularProgressIndicator()
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
         else
           SizedBox(
-            height: 48,
-            child: ElevatedButton.icon(
+            height: 52,
+            width: double.infinity,
+            child: OutlinedButton.icon(
               onPressed: _handleSignIn,
               icon: const Icon(Icons.login),
-              label: const Text('Sign in with Google'),
+              label: const Text('Continue with Google'),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: theme.colorScheme.outline.withOpacity(0.7)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
             ),
           ),
         const SizedBox(height: 8),

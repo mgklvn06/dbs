@@ -4,6 +4,7 @@ class AppointmentEntity {
   final String doctorId;
   final DateTime dateTime;
   final String status;
+  final String? slotId;
 
   AppointmentEntity({
     this.id,
@@ -11,5 +12,6 @@ class AppointmentEntity {
     required this.doctorId,
     required this.dateTime,
     this.status = 'pending',
+    this.slotId,
   });
 }

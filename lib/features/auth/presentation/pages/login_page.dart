@@ -1,9 +1,11 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:dbs/config/routes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:dbs/config/routes.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:dbs/core/widgets/app_background.dart';
+import 'package:dbs/core/widgets/app_card.dart';
+import 'package:dbs/core/widgets/reveal.dart';
 
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
@@ -32,33 +34,35 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: BlocConsumer<AuthBloc, AuthState>(
-          listener: (context, state) {
-            if (state is AuthError) {
-              final friendly = mapFirebaseAuthError(state.message);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Sign in failed: $friendly'),
-                  behavior: SnackBarBehavior.floating,
-                ),
+      body: AppBackground(
+        child: SafeArea(
+          child: BlocConsumer<AuthBloc, AuthState>(
+            listener: (context, state) {
+              if (state is AuthError) {
+                final friendly = mapFirebaseAuthError(state.message);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Sign in failed: $friendly'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              } else if (state is AuthAuthenticated) {
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  Routes.authRedirect,
+                  (route) => false,
+                );
+              }
+            },
+            builder: (context, state) {
+              return Stack(
+                children: [
+                  _buildContent(context),
+                  if (state is AuthLoading) const _LoadingOverlay(),
+                ],
               );
-            } else if (state is AuthAuthenticated) {
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                Routes.authRedirect,
-                (route) => false,
-              );
-            }
-          },
-          builder: (context, state) {
-            return Stack(
-              children: [
-                _buildContent(context),
-                if (state is AuthLoading) const _LoadingOverlay(),
-              ],
-            );
-          },
+            },
+          ),
         ),
       ),
     );
@@ -68,123 +72,138 @@ class _LoginPageState extends State<LoginPage> {
     final theme = Theme.of(context);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 48),
-
-          // App identity
-          Center(
+          const SizedBox(height: 8),
+          Reveal(
+            delay: const Duration(milliseconds: 50),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.local_hospital_rounded,
-                  size: 64,
-                  color: theme.colorScheme.primary,
+                Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(Icons.local_hospital_rounded, color: Colors.white),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'AstraCare',
+                            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Smart bookings, real care.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurface.withOpacity(0.6),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 18),
                 Text(
-                  'Doctor Booking System',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  'Welcome back',
+                  style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   'Sign in to manage your appointments',
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
+                    color: theme.colorScheme.onSurface.withOpacity(0.6),
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ],
             ),
           ),
-
-          const SizedBox(height: 48),
-
-          // Email
-          TextField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(
-              labelText: 'Email address',
-              prefixIcon: Icon(Icons.email_outlined),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Password
-          TextField(
-            controller: _passwordController,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Password',
-              prefixIcon: Icon(Icons.lock_outline),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Login button
-          SizedBox(
-            height: 48,
-            child: ElevatedButton(
-              onPressed: () {
-                context.read<AuthBloc>().add(
-                      LoginRequested(
-                        _emailController.text.trim(),
-                        _passwordController.text,
+          const SizedBox(height: 22),
+          Reveal(
+            delay: const Duration(milliseconds: 140),
+            child: AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'Email address',
+                      prefixIcon: Icon(Icons.email_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: Icon(Icons.lock_outline),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: () {
+                      context.read<AuthBloc>().add(
+                            LoginRequested(
+                              _emailController.text.trim(),
+                              _passwordController.text,
+                            ),
+                          );
+                    },
+                    child: const Text('Sign In'),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: const [
+                      Expanded(child: Divider()),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('OR'),
                       ),
-                    );
-              },
-              child: const Text('Sign In'),
+                      Expanded(child: Divider()),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const GoogleSignInWebButton(),
+                ],
+              ),
             ),
           ),
-
-          const SizedBox(height: 16),
-
-          // Divider
-          Row(
-            children: const [
-              Expanded(child: Divider()),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12),
-                child: Text('OR'),
-              ),
-              Expanded(child: Divider()),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // Google Sign In
-          const GoogleSignInWebButton(),
-
-          const SizedBox(height: 32),
-
-          // Footer
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text("Don’t have an account? "),
-              TextButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, Routes.register);
-                },
-                child: const Text('Register'),
-              ),
-            ],
+          const SizedBox(height: 18),
+          Reveal(
+            delay: const Duration(milliseconds: 220),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text("Don't have an account? "),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pushNamed(context, Routes.register);
+                  },
+                  child: const Text('Register'),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 }
-
 
 class _LoadingOverlay extends StatelessWidget {
   const _LoadingOverlay();
@@ -199,4 +218,3 @@ class _LoadingOverlay extends StatelessWidget {
     );
   }
 }
-

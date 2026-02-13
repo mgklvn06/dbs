@@ -15,6 +15,7 @@ class BookingRepositoryImpl implements BookingRepository {
       doctorId: appointment.doctorId,
       dateTime: appointment.dateTime,
       status: appointment.status,
+      slotId: appointment.slotId,
     );
 
     final saved = await remote.createAppointment(model);
@@ -24,6 +25,7 @@ class BookingRepositoryImpl implements BookingRepository {
       doctorId: saved.doctorId,
       dateTime: saved.dateTime,
       status: saved.status,
+      slotId: saved.slotId,
     );
   }
 
@@ -37,6 +39,7 @@ class BookingRepositoryImpl implements BookingRepository {
               doctorId: m.doctorId,
               dateTime: m.dateTime,
               status: m.status,
+              slotId: m.slotId,
             ))
         .toList();
   }
@@ -51,6 +54,7 @@ class BookingRepositoryImpl implements BookingRepository {
               doctorId: m.doctorId,
               dateTime: m.dateTime,
               status: m.status,
+              slotId: m.slotId,
             ))
         .toList();
   }
@@ -65,6 +69,7 @@ class BookingRepositoryImpl implements BookingRepository {
               doctorId: m.doctorId,
               dateTime: m.dateTime,
               status: m.status,
+              slotId: m.slotId,
             ))
         .toList();
   }

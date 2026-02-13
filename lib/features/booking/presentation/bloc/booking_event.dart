@@ -6,8 +6,14 @@ class BookAppointmentRequested extends BookingEvent {
   final String userId;
   final String doctorId;
   final DateTime dateTime;
+  final String? slotId;
 
-  const BookAppointmentRequested({required this.userId, required this.doctorId, required this.dateTime});
+  const BookAppointmentRequested({
+    required this.userId,
+    required this.doctorId,
+    required this.dateTime,
+    this.slotId,
+  });
 }
 
 class LoadAppointmentsRequested extends BookingEvent {

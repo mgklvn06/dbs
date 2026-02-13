@@ -1,7 +1,12 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:dbs/config/routes.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:dbs/core/widgets/app_background.dart';
+import 'package:dbs/core/widgets/app_card.dart';
+import 'package:dbs/core/widgets/reveal.dart';
 
 class DoctorProfilePage extends StatelessWidget {
   const DoctorProfilePage({super.key});
@@ -10,27 +15,45 @@ class DoctorProfilePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Doctor Profile')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            const CircleAvatar(radius: 48, child: Icon(Icons.person)),
-            const SizedBox(height: 12),
-            const Text('Dr. John Doe', style: TextStyle(fontSize: 20)),
-            const SizedBox(height: 8),
-            const Text('Cardiologist — 10 years experience'),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () async {
-                // Resolve the doctor document id for the current user, then navigate
-                final uid = FirebaseAuth.instance.currentUser?.uid;
-                if (uid == null) return;
-                final did = await _resolveDoctorIdForUser(uid);
-                Navigator.pushNamed(context, Routes.doctorAppointments, arguments: did);
-              },
-              child: const Text('My appointments'),
-            ),
-          ],
+      body: AppBackground(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Reveal(
+                delay: const Duration(milliseconds: 40),
+                child: AppCard(
+                  child: Column(
+                    children: [
+                      const CircleAvatar(radius: 48, child: Icon(Icons.person)),
+                      const SizedBox(height: 12),
+                      const Text('Dr. John Doe', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Cardiology - 10 years experience',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () async {
+                  // Resolve the doctor document id for the current user, then navigate
+                  final uid = FirebaseAuth.instance.currentUser?.uid;
+                  if (uid == null) return;
+                  final did = await _resolveDoctorIdForUser(uid);
+                  // ignore: use_build_context_synchronously
+                  Navigator.pushNamed(context, Routes.doctorAppointments, arguments: did);
+                },
+                child: const Text('My appointments'),
+              ),
+            ],
+          ),
         ),
       ),
     );

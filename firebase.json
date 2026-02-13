@@ -1,1 +1,29 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"doctor-booking-system-ef2c8","appId":"1:153034379474:android:456b0864a388295c71dd0b","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"doctor-booking-system-ef2c8","configurations":{"android":"1:153034379474:android:456b0864a388295c71dd0b","ios":"1:153034379474:ios:0dd8390c9a074c5271dd0b","macos":"1:153034379474:ios:0dd8390c9a074c5271dd0b","web":"1:153034379474:web:a17fb65574132d3571dd0b","windows":"1:153034379474:web:795feb0d0154316171dd0b"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "doctor-booking-system-ef2c8",
+          "appId": "1:153034379474:android:456b0864a388295c71dd0b",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "doctor-booking-system-ef2c8",
+          "configurations": {
+            "android": "1:153034379474:android:456b0864a388295c71dd0b",
+            "ios": "1:153034379474:ios:0dd8390c9a074c5271dd0b",
+            "macos": "1:153034379474:ios:0dd8390c9a074c5271dd0b",
+            "web": "1:153034379474:web:a17fb65574132d3571dd0b",
+            "windows": "1:153034379474:web:795feb0d0154316171dd0b"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

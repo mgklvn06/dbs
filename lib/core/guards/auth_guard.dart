@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../../features/auth/presentation/pages/login_page.dart';
+// import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/profile/presentation/pages/profile_setup_page.dart';
-import '../../features/home/presentation/pages/home_page.dart';
+// import '../../features/home/presentation/pages/home_page.dart';
 import '../../features/admin/presentation/pages/admin_dashboard.dart';
 import '../../features/doctor/presentation/pages/doctor_profile_page.dart';
 
@@ -49,6 +49,7 @@ class AuthGuard extends StatelessWidget {
             return const AdminDashboardPage();
           case 'doctor':
             return const DoctorProfilePage();
+          case 'user':
           case 'patient':
             return authenticated;
           default:

@@ -61,9 +61,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       // For mobile platforms, use the google_sign_in plugin
       GoogleSignInAccount? googleUser = await _googleSignIn.signInSilently();
 
-      if (googleUser == null) {
-        googleUser = await _googleSignIn.signIn();
-      }
+      googleUser ??= await _googleSignIn.signIn();
 
       if (googleUser == null) {
         throw FirebaseAuthException(
