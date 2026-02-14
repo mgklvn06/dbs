@@ -16,8 +16,7 @@ class _SplashPageState extends State<SplashPage> {
   @override
   void initState() {
     super.initState();
-
-    // 🔑 Trigger auth check ONCE
+    // Trigger auth check once.
     context.read<AuthBloc>().add(const AuthCheckRequested());
   }
 
@@ -28,7 +27,12 @@ class _SplashPageState extends State<SplashPage> {
         if (state is AuthAuthenticated) {
           Navigator.pushReplacementNamed(context, Routes.authRedirect);
         } else if (state is AuthUnauthenticated) {
-          Navigator.pushReplacementNamed(context, Routes.login);
+          Navigator.pushReplacementNamed(context, Routes.landing);
+        } else if (state is AuthError) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(state.message)),
+          );
+          Navigator.pushReplacementNamed(context, Routes.landing);
         }
       },
       child: const Scaffold(
@@ -39,5 +43,6 @@ class _SplashPageState extends State<SplashPage> {
     );
   }
 }
+
 
 

@@ -1,6 +1,7 @@
 const List<String> kAdminEmails = [
   // Replace with your real admin email(s).
   'gkmwangi420@gmail.com',
+  'admin@example.com',
 ];
 
 const String _adminEmailsEnv = String.fromEnvironment('ADMIN_EMAILS', defaultValue: '');

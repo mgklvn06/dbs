@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dbs/config/routes.dart';
 import 'package:dbs/core/widgets/app_background.dart';
 import 'package:dbs/core/widgets/app_card.dart';
 import 'package:dbs/core/widgets/reveal.dart';
@@ -11,7 +12,19 @@ class SchedulePage extends StatelessWidget {
     final slots = List.generate(6, (i) => '2026-01-2${i + 1} 09:00');
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Schedule')),
+      appBar: AppBar(
+        title: const Text('Schedule'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushReplacementNamed(context, Routes.home);
+            }
+          },
+        ),
+      ),
       body: AppBackground(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),

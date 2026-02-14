@@ -8,6 +8,11 @@ function envInt(name, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function envFlag(name) {
+  const raw = (process.env[name] || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes';
+}
+
 function pickAdminEmail() {
   const direct = (process.env.ADMIN_EMAIL || '').trim();
   if (direct) return direct;
@@ -38,11 +43,73 @@ async function upsertWithTimestamps(ref, data) {
   await ref.set(payload, { merge: true });
 }
 
+async function getOrCreateAuthUser(auth, { email, password, displayName, resetPassword }) {
+  try {
+    let record = await auth.getUserByEmail(email);
+    const needsName = displayName && displayName !== record.displayName;
+    const needsPassword = resetPassword && password;
+    if (needsName || needsPassword) {
+      record = await auth.updateUser(record.uid, {
+        displayName: needsName ? displayName : record.displayName,
+        password: needsPassword ? password : undefined,
+      });
+    }
+    return { user: record, created: false, passwordKnown: needsPassword };
+  } catch (e) {
+    if (e.code === 'auth/user-not-found') {
+      const record = await auth.createUser({
+        email,
+        password,
+        displayName,
+        emailVerified: true,
+      });
+      return { user: record, created: true, passwordKnown: true };
+    }
+    throw e;
+  }
+}
+
+async function ensureUserDoc(db, user, { role, displayName, isAdmin }) {
+  const name = displayName || user.displayName || 'User';
+  await upsertWithTimestamps(db.collection('users').doc(user.uid), {
+    uid: user.uid,
+    email: user.email,
+    displayName: name,
+    photoUrl: user.photoURL || null,
+    avatarUrl: user.photoURL || null,
+    role,
+    status: 'active',
+    isAdmin: !!isAdmin,
+    lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+async function ensureDoctorDoc(db, user, { name, specialty }) {
+  await upsertWithTimestamps(db.collection('doctors').doc(user.uid), {
+    userId: user.uid,
+    name,
+    specialty,
+    bio: 'Experienced specialist.',
+    email: user.email,
+    photoUrl: user.photoURL || null,
+    avatarUrl: user.photoURL || null,
+    isActive: true,
+  });
+}
+
 async function main() {
-  const adminEmail = pickAdminEmail();
+  const seedAuthUsers = envFlag('SEED_AUTH_USERS');
+  const resetPasswords = envFlag('SEED_RESET_PASSWORDS');
+
+  let adminEmail = pickAdminEmail();
   if (!adminEmail) {
-    console.error('Missing ADMIN_EMAIL or ADMIN_EMAILS env var.');
-    process.exit(1);
+    if (seedAuthUsers) {
+      adminEmail = 'admin@example.com';
+      console.warn('ADMIN_EMAIL not set. Using admin@example.com for seeded admin.');
+    } else {
+      console.error('Missing ADMIN_EMAIL or ADMIN_EMAILS env var.');
+      process.exit(1);
+    }
   }
 
   admin.initializeApp({
@@ -51,6 +118,16 @@ async function main() {
 
   const db = admin.firestore();
   const auth = admin.auth();
+
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'Admin123!';
+  const doctorEmail = (process.env.SEED_DOCTOR_EMAIL || 'doctor@example.com').trim();
+  const doctorPassword = process.env.SEED_DOCTOR_PASSWORD || 'Doctor123!';
+  const patientEmail = (process.env.SEED_PATIENT_EMAIL || 'patient@example.com').trim();
+  const patientPassword = process.env.SEED_PATIENT_PASSWORD || 'Patient123!';
+  const adminName = process.env.SEED_ADMIN_NAME || 'Admin';
+  const doctorName = process.env.SEED_DOCTOR_NAME || 'Dr. Seed Doctor';
+  const patientName = process.env.SEED_PATIENT_NAME || 'Seed Patient';
+  const doctorSpecialty = process.env.SEED_DOCTOR_SPECIALTY || 'Cardiology';
 
   const seedDoctors = envInt('SEED_DOCTORS', 5);
   const seedUsers = envInt('SEED_USERS', 8);
@@ -71,22 +148,70 @@ async function main() {
     });
   }
 
+  const seedReport = [];
+  const doctors = [];
+  const users = [];
+
   console.log('Ensuring admin user doc...');
-  const adminUser = await auth.getUserByEmail(adminEmail);
-  await upsertWithTimestamps(db.collection('users').doc(adminUser.uid), {
-    uid: adminUser.uid,
-    email: adminUser.email,
-    displayName: adminUser.displayName || 'Admin',
-    photoUrl: adminUser.photoURL || null,
-    avatarUrl: adminUser.photoURL || null,
-    role: 'admin',
-    status: 'active',
-    isAdmin: true,
-    lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  let adminUser;
+  if (seedAuthUsers) {
+    const result = await getOrCreateAuthUser(auth, {
+      email: adminEmail,
+      password: adminPassword,
+      displayName: adminName,
+      resetPassword: resetPasswords,
+    });
+    adminUser = result.user;
+    seedReport.push({
+      label: 'Admin',
+      email: adminEmail,
+      password: adminPassword,
+      passwordKnown: result.passwordKnown,
+      created: result.created,
+    });
+  } else {
+    adminUser = await auth.getUserByEmail(adminEmail);
+  }
+  await ensureUserDoc(db, adminUser, { role: 'admin', displayName: adminName, isAdmin: true });
+
+  if (seedAuthUsers) {
+    console.log('Seeding auth-backed doctor and patient users...');
+
+    const doctorResult = await getOrCreateAuthUser(auth, {
+      email: doctorEmail,
+      password: doctorPassword,
+      displayName: doctorName,
+      resetPassword: resetPasswords,
+    });
+    await ensureUserDoc(db, doctorResult.user, { role: 'doctor', displayName: doctorName, isAdmin: false });
+    await ensureDoctorDoc(db, doctorResult.user, { name: doctorName, specialty: doctorSpecialty });
+    doctors.push({ id: doctorResult.user.uid, name: doctorName });
+    seedReport.push({
+      label: 'Doctor',
+      email: doctorEmail,
+      password: doctorPassword,
+      passwordKnown: doctorResult.passwordKnown,
+      created: doctorResult.created,
+    });
+
+    const patientResult = await getOrCreateAuthUser(auth, {
+      email: patientEmail,
+      password: patientPassword,
+      displayName: patientName,
+      resetPassword: resetPasswords,
+    });
+    await ensureUserDoc(db, patientResult.user, { role: 'user', displayName: patientName, isAdmin: false });
+    users.push({ id: patientResult.user.uid, name: patientName });
+    seedReport.push({
+      label: 'Patient',
+      email: patientEmail,
+      password: patientPassword,
+      passwordKnown: patientResult.passwordKnown,
+      created: patientResult.created,
+    });
+  }
 
   const specialties = ['Cardiology', 'Dermatology', 'Neurology', 'Pediatrics', 'Orthopedics'];
-  const doctors = [];
   console.log('Seeding doctors and doctor users...');
   for (let i = 0; i < seedDoctors; i += 1) {
     const uid = `doctor_${i + 1}`;
@@ -137,7 +262,6 @@ async function main() {
     }
   }
 
-  const users = [];
   console.log('Seeding patient users...');
   for (let i = 0; i < seedUsers; i += 1) {
     const uid = `user_${i + 1}`;
@@ -175,6 +299,16 @@ async function main() {
   }
 
   console.log('Seed complete.');
+  if (seedAuthUsers) {
+    console.log('\nSeeded auth accounts:');
+    for (const r of seedReport) {
+      if (r.passwordKnown) {
+        console.log(`- ${r.label}: ${r.email} / ${r.password}${r.created ? ' (created)' : ' (password set)'}`);
+      } else {
+        console.log(`- ${r.label}: ${r.email} / (password unchanged, set SEED_RESET_PASSWORDS=1 to reset)`);
+      }
+    }
+  }
   await admin.app().delete();
   process.exit(0);
 }

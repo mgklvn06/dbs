@@ -84,17 +84,20 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     }
   }
 
-  void _onAuthCheck(
+  Future<void> _onAuthCheck(
     AuthCheckRequested event,
     Emitter<AuthState> emit,
   ) {
-    final user = FirebaseAuth.instance.currentUser;
-
-    if (user == null) {
-      emit(AuthUnauthenticated());
-    } else {
-      emit(AuthAuthenticated());
-    }
+    emit(AuthLoading());
+    return FirebaseAuth.instance.authStateChanges().first.then((user) {
+      if (user == null) {
+        emit(AuthUnauthenticated());
+      } else {
+        emit(AuthAuthenticated());
+      }
+    }).catchError((e) {
+      emit(AuthError(e.toString()));
+    });
   }
 
   Future<void> _onUploadAvatar(

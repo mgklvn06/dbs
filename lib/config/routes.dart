@@ -6,7 +6,6 @@ import '../features/auth/presentation/pages/login_page.dart';
 import '../features/auth/presentation/pages/register_page.dart';
 // ignore: unused_import
 import '../features/profile/presentation/pages/profile_setup_page.dart';
-import '../features/home/presentation/pages/home_page.dart';
 import '../debug/auth_debug_page.dart';
 import '../features/admin/presentation/pages/admin_dashboard.dart';
 import '../features/admin/presentation/pages/users_list_page.dart';
@@ -19,9 +18,12 @@ import '../features/booking/presentation/pages/patient_appointments_page.dart';
 import '../features/doctor/presentation/pages/doctor_profile_page.dart';
 import '../features/doctor/domain/entities/doctor.dart';
 import '../features/schedule/presentation/pages/schedule_page.dart';
+import '../features/patient/presentation/pages/patient_landing_page.dart';
+import '../features/patient/presentation/pages/patient_dashboard_page.dart';
 
 class Routes {
   static const splash = '/';
+  static const landing = '/landing';
   static const login = '/login';
   static const register = '/register';
   static const authRedirect = '/auth';
@@ -40,31 +42,32 @@ class Routes {
 
   static final Map<String, WidgetBuilder> pages = {
     splash: (_) => const SplashPage(),
+    landing: (_) => const PatientLandingPage(),
     login: (_) => LoginPage(),
     register: (_) => RegisterPage(),
 
     authRedirect: (_) => AuthGuard(
-          unauthenticated: LoginPage(),
-          authenticated: HomePage(),
+          unauthenticated: const PatientLandingPage(),
+          authenticated: const PatientDashboardPage(),
         ),
 
-    home: (_) => HomePage(),
+    home: (_) => const PatientDashboardPage(),
     admin: (_) => const AdminDashboardPage(),
     adminUsers: (_) => const UsersListPage(),
-  adminAppointments: (_) => const AppointmentPage(),
-  adminAllAppointments: (_) => const AdminAppointmentsPage(),
+    adminAppointments: (_) => const AppointmentPage(),
+    adminAllAppointments: (_) => const AdminAppointmentsPage(),
     doctorAppointments: (context) {
       final arg = ModalRoute.of(context)?.settings.arguments;
       final id = (arg is String) ? arg : '';
       return DoctorAppointmentsPage(doctorId: id);
     },
-  myAppointments: (_) => const PatientAppointmentsPage(),
+    myAppointments: (_) => const PatientAppointmentsPage(),
     booking: (_) => const BookingFlowPage(),
-  bookingAppointment: (context) {
-    final arg = ModalRoute.of(context)?.settings.arguments;
-    final doctor = (arg is DoctorEntity) ? arg : null;
-    return BookingAppointmentPage(initialDoctor: doctor);
-  },
+    bookingAppointment: (context) {
+      final arg = ModalRoute.of(context)?.settings.arguments;
+      final doctor = (arg is DoctorEntity) ? arg : null;
+      return BookingAppointmentPage(initialDoctor: doctor);
+    },
     doctorProfile: (_) => const DoctorProfilePage(),
     schedule: (_) => const SchedulePage(),
     authDebug: (_) => const AuthDebugPage(),

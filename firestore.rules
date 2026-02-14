@@ -8,7 +8,7 @@ service cloud.firestore {
     function isAdminEmail() {
       return signedIn()
           && request.auth.token.email != null
-          && request.auth.token.email in ['gkmwangi420@gmail.com'];
+          && request.auth.token.email in ['gkmwangi420@gmail.com', 'admin@example.com'];
     }
 
     function userDoc() {
@@ -32,11 +32,20 @@ service cloud.firestore {
     }
 
     function isValidStatus(s) {
-      return s in ['pending', 'confirmed', 'accepted', 'rejected', 'completed', 'cancelled'];
+      return s in ['pending', 'confirmed', 'accepted', 'rejected', 'completed', 'cancelled', 'no_show'];
     }
 
     function userEditableKeys() {
-      return ['displayName', 'photoUrl', 'avatarUrl', 'lastLoginAt', 'updatedAt'];
+      return [
+        'displayName',
+        'photoUrl',
+        'avatarUrl',
+        'lastLoginAt',
+        'updatedAt',
+        'phone',
+        'address',
+        'dateOfBirth'
+      ];
     }
 
     function canSelfSetInitialRole() {
@@ -97,6 +106,10 @@ service cloud.firestore {
           || (signedIn()
               && request.auth.uid == resource.data.doctorId
               && isValidStatus(request.resource.data.status)
+              && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status', 'notes', 'updatedAt']))
+          || (signedIn()
+              && request.auth.uid == resource.data.userId
+              && request.resource.data.status == 'cancelled'
               && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status', 'updatedAt']));
 
       allow delete: if isAdmin();
