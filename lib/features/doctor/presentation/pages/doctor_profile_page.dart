@@ -8,8 +8,11 @@ import 'package:dbs/config/routes.dart';
 import 'package:dbs/core/widgets/app_background.dart';
 import 'package:dbs/core/widgets/app_card.dart';
 import 'package:dbs/core/widgets/reveal.dart';
+import 'package:dbs/features/auth/domain/usecases/upload_avatar_usecase.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
+import 'package:image_picker/image_picker.dart';
 
 class DoctorProfilePage extends StatefulWidget {
   const DoctorProfilePage({super.key});
@@ -50,6 +53,7 @@ class _DoctorProfilePageState extends State<DoctorProfilePage> {
   final TextEditingController _profileImageController = TextEditingController();
   final TextEditingController _profileContactEmailController = TextEditingController();
   final TextEditingController _profileContactPhoneController = TextEditingController();
+  final _imagePicker = ImagePicker();
 
   final TextEditingController _availStartController = TextEditingController(text: '09:00');
   final TextEditingController _availEndController = TextEditingController(text: '17:00');
@@ -63,6 +67,7 @@ class _DoctorProfilePageState extends State<DoctorProfilePage> {
   bool _profileLoaded = false;
   bool _availabilityLoaded = false;
   bool _isGeneratingSlots = false;
+  bool _isUploadingProfileImage = false;
 
   @override
   void initState() {
@@ -375,6 +380,8 @@ class _DoctorProfilePageState extends State<DoctorProfilePage> {
           contactEmailController: _profileContactEmailController,
           contactPhoneController: _profileContactPhoneController,
           onSaveProfile: () => _saveProfile(context, doctorId),
+          onUploadImage: () => _uploadDoctorProfileImage(context, doctorId),
+          isUploadingImage: _isUploadingProfileImage,
           onLoadProfile: _loadProfileFields,
           profileLoaded: _profileLoaded,
           setProfileLoaded: (value) => _profileLoaded = value,
@@ -498,6 +505,44 @@ class _DoctorProfilePageState extends State<DoctorProfilePage> {
     _profileContactEmailController.text = (data['contactEmail'] as String?) ?? '';
     _profileContactPhoneController.text = (data['contactPhone'] as String?) ?? '';
     _profileLoaded = true;
+  }
+
+  Future<void> _uploadDoctorProfileImage(BuildContext context, String doctorId) async {
+    if (_isUploadingProfileImage) return;
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 1024,
+    );
+    if (picked == null) return;
+
+    setState(() => _isUploadingProfileImage = true);
+    try {
+      final uploader = GetIt.instance<UploadAvatarUseCase>();
+      final url = await uploader(picked.path);
+      _profileImageController.text = url;
+
+      final db = FirebaseFirestore.instance;
+      await db.collection('doctors').doc(doctorId).set({
+        'profileImageUrl': url,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      await db.collection('users').doc(doctorId).set({
+        'photoUrl': url,
+        'avatarUrl': url,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await FirebaseAuth.instance.currentUser?.updatePhotoURL(url);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile image updated')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to upload image: $e')));
+    } finally {
+      if (mounted) setState(() => _isUploadingProfileImage = false);
+    }
   }
 
   Future<void> _saveAvailabilitySettings(BuildContext context, String doctorId) async {
@@ -777,25 +822,26 @@ class _DoctorProfilePageState extends State<DoctorProfilePage> {
     var pendingCount = 0;
     final upcomingList = <_AppointmentPreview>[];
 
-    for (final doc in apptsSnap.docs) {
-      final data = doc.data();
-      final dt = _parseDate(data['appointmentTime'] ?? data['dateTime']);
-      final status = (data['status'] as String?) ?? 'pending';
-      if (dt.isAfter(todayStart.subtract(const Duration(seconds: 1))) && dt.isBefore(tomorrow)) {
-        todayCount += 1;
-      }
-      if (dt.isAfter(todayStart.subtract(const Duration(seconds: 1))) && dt.isBefore(weekEnd)) {
-        upcomingCount += 1;
-      }
-      if (status == 'pending') {
-        pendingCount += 1;
-      }
-      if (dt.isAfter(now)) {
-        upcomingList.add(_AppointmentPreview(
-          id: doc.id,
-          patientId: (data['userId'] as String?) ?? '',
-          dateTime: dt,
-          status: status,
+      for (final doc in apptsSnap.docs) {
+        final data = doc.data();
+        final dt = _parseDate(data['appointmentTime'] ?? data['dateTime']);
+        final status = (data['status'] as String?) ?? 'pending';
+        final isActive = status == 'pending' || status == 'confirmed' || status == 'accepted';
+        if (isActive && dt.isAfter(todayStart.subtract(const Duration(seconds: 1))) && dt.isBefore(tomorrow)) {
+          todayCount += 1;
+        }
+        if (isActive && dt.isAfter(todayStart.subtract(const Duration(seconds: 1))) && dt.isBefore(weekEnd)) {
+          upcomingCount += 1;
+        }
+        if (status == 'pending') {
+          pendingCount += 1;
+        }
+        if (isActive && dt.isAfter(now)) {
+          upcomingList.add(_AppointmentPreview(
+            id: doc.id,
+            patientId: (data['userId'] as String?) ?? '',
+            dateTime: dt,
+            status: status,
         ));
       }
     }
@@ -1599,10 +1645,10 @@ class _DoctorAppointmentsModule extends StatelessWidget {
   List<Widget> _buildAppointmentActions(_AppointmentView appt) {
     final actions = <Widget>[];
 
-    void addAction(String label, IconData icon, String status) {
+    void addAction(String label, IconData icon, String status, {bool enabled = true}) {
       actions.add(
         OutlinedButton.icon(
-          onPressed: () => onUpdateStatus(appt.id, status),
+          onPressed: enabled ? () => onUpdateStatus(appt.id, status) : null,
           icon: Icon(icon),
           label: Text(label),
         ),
@@ -1613,8 +1659,9 @@ class _DoctorAppointmentsModule extends StatelessWidget {
       addAction('Confirm', Icons.check_circle_outline, 'confirmed');
       addAction('Cancel', Icons.cancel_outlined, 'cancelled');
     } else if (appt.status == 'confirmed' || appt.status == 'accepted') {
-      addAction('Complete', Icons.done_all, 'completed');
-      addAction('No show', Icons.person_off_outlined, 'no_show');
+      final canFinalize = _canFinalizeAppointment(appt.dateTime);
+      addAction('Complete', Icons.done_all, 'completed', enabled: canFinalize);
+      addAction('No show', Icons.person_off_outlined, 'no_show', enabled: canFinalize);
       addAction('Cancel', Icons.cancel_outlined, 'cancelled');
     }
 
@@ -1627,6 +1674,11 @@ class _DoctorAppointmentsModule extends StatelessWidget {
     );
 
     return actions;
+  }
+
+  bool _canFinalizeAppointment(DateTime dateTime) {
+    final now = DateTime.now();
+    return !dateTime.isAfter(now);
   }
 }
 class _DoctorAvailabilityModule extends StatelessWidget {
@@ -2026,6 +2078,8 @@ class _DoctorProfileSettingsModule extends StatelessWidget {
   final TextEditingController contactEmailController;
   final TextEditingController contactPhoneController;
   final VoidCallback onSaveProfile;
+  final VoidCallback onUploadImage;
+  final bool isUploadingImage;
   final void Function(Map<String, dynamic>? data) onLoadProfile;
   final bool profileLoaded;
   final ValueChanged<bool> setProfileLoaded;
@@ -2041,6 +2095,8 @@ class _DoctorProfileSettingsModule extends StatelessWidget {
     required this.contactEmailController,
     required this.contactPhoneController,
     required this.onSaveProfile,
+    required this.onUploadImage,
+    required this.isUploadingImage,
     required this.onLoadProfile,
     required this.profileLoaded,
     required this.setProfileLoaded,
@@ -2125,6 +2181,21 @@ class _DoctorProfileSettingsModule extends StatelessWidget {
                     TextField(
                       controller: imageController,
                       decoration: const InputDecoration(labelText: 'Profile image URL'),
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: isUploadingImage ? null : onUploadImage,
+                        icon: isUploadingImage
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.photo_camera_outlined),
+                        label: Text(isUploadingImage ? 'Uploading...' : 'Upload image'),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(

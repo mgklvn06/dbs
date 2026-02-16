@@ -19,8 +19,12 @@ service cloud.firestore {
       return userDoc().data.role;
     }
 
+    function hasAdminRole() {
+      return userDoc().data.role == 'admin' || userDoc().data.isAdmin == true;
+    }
+
     function isAdmin() {
-      return signedIn() && (role() == 'admin' || isAdminEmail());
+      return signedIn() && (hasAdminRole() || isAdminEmail());
     }
 
     function isSelf(uid) {
@@ -33,6 +37,15 @@ service cloud.firestore {
 
     function isValidStatus(s) {
       return s in ['pending', 'confirmed', 'accepted', 'rejected', 'completed', 'cancelled', 'no_show'];
+    }
+
+    function isFinalStatus(s) {
+      return s in ['completed', 'no_show'];
+    }
+
+    function canFinalizeAppointment() {
+      return resource.data.appointmentTime is timestamp
+          && request.time >= resource.data.appointmentTime;
     }
 
     function userEditableKeys() {
@@ -106,7 +119,8 @@ service cloud.firestore {
           || (signedIn()
               && request.auth.uid == resource.data.doctorId
               && isValidStatus(request.resource.data.status)
-              && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status', 'notes', 'updatedAt']))
+              && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status', 'notes', 'updatedAt'])
+              && (!isFinalStatus(request.resource.data.status) || canFinalizeAppointment()))
           || (signedIn()
               && request.auth.uid == resource.data.userId
               && request.resource.data.status == 'cancelled'
@@ -137,6 +151,11 @@ service cloud.firestore {
     }
 
     match /roles/{roleName} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /settings/{docId} {
       allow read: if signedIn();
       allow write: if isAdmin();
     }

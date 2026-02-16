@@ -9,11 +9,16 @@ import 'package:dbs/core/widgets/app_background.dart';
 import 'package:dbs/core/widgets/app_card.dart';
 import 'package:dbs/core/widgets/reveal.dart';
 import 'package:dbs/features/doctor/domain/entities/doctor.dart';
+import 'package:dbs/features/auth/domain/usecases/upload_avatar_usecase.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
+import 'package:image_picker/image_picker.dart';
 
 class PatientDashboardPage extends StatefulWidget {
-  const PatientDashboardPage({super.key});
+  final int initialIndex;
+
+  const PatientDashboardPage({super.key, this.initialIndex = 0});
 
   @override
   State<PatientDashboardPage> createState() => _PatientDashboardPageState();
@@ -28,7 +33,7 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
     _PatientNavItem(label: 'Profile Settings', icon: Icons.settings_outlined),
   ];
 
-  int _selectedIndex = 0;
+  late int _selectedIndex;
 
   final TextEditingController _doctorSearchController = TextEditingController();
   final TextEditingController _appointmentSearchController = TextEditingController();
@@ -37,6 +42,7 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
   final TextEditingController _profileAddressController = TextEditingController();
   final TextEditingController _profileDobController = TextEditingController();
   final TextEditingController _profilePhotoController = TextEditingController();
+  final _imagePicker = ImagePicker();
 
   String _doctorQuery = '';
   bool _onlyAvailable = false;
@@ -46,11 +52,14 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
   String _appointmentStatus = 'all';
 
   bool _profileLoaded = false;
+  bool _isUploadingPhoto = false;
   late Future<_PatientDashboardMetrics> _metricsFuture;
 
   @override
   void initState() {
     super.initState();
+    final initial = widget.initialIndex;
+    _selectedIndex = (initial >= 0 && initial < _navItems.length) ? initial : 0;
     _metricsFuture = _loadDashboardMetrics();
   }
 
@@ -323,6 +332,8 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
           onLoadProfile: _loadProfileFields,
           setProfileLoaded: (value) => _profileLoaded = value,
           onSaveProfile: () => _saveProfile(context, userId),
+          onUploadPhoto: () => _uploadProfilePhoto(context, userId),
+          isUploadingPhoto: _isUploadingPhoto,
         );
       default:
         return const SizedBox.shrink();
@@ -408,12 +419,18 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
         dateTime: dt,
         status: status,
       );
-      if (dt.isAfter(now)) {
+
+      final isActive = status == 'pending' || status == 'confirmed' || status == 'accepted';
+      final isFinal = status == 'completed' || status == 'no_show';
+      final isUpcoming = isActive && dt.isAfter(now);
+      final isPast = dt.isBefore(now) && (isActive || isFinal);
+
+      if (isUpcoming) {
         upcoming += 1;
         if (next == null || dt.isBefore(next.dateTime)) {
           next = appt;
         }
-      } else {
+      } else if (isPast) {
         past += 1;
       }
     }
@@ -467,6 +484,39 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
     final photo = (data['photoUrl'] as String?) ?? (data['avatarUrl'] as String?) ?? '';
     _profilePhotoController.text = photo;
     _profileLoaded = true;
+  }
+
+  Future<void> _uploadProfilePhoto(BuildContext context, String userId) async {
+    if (_isUploadingPhoto) return;
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 1024,
+    );
+    if (picked == null) return;
+
+    setState(() => _isUploadingPhoto = true);
+    try {
+      final uploader = GetIt.instance<UploadAvatarUseCase>();
+      final url = await uploader(picked.path);
+      _profilePhotoController.text = url;
+
+      await FirebaseFirestore.instance.collection('users').doc(userId).set({
+        'photoUrl': url,
+        'avatarUrl': url,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await FirebaseAuth.instance.currentUser?.updatePhotoURL(url);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile photo updated')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to upload photo: $e')));
+    } finally {
+      if (mounted) setState(() => _isUploadingPhoto = false);
+    }
   }
 
   Future<void> _saveProfile(BuildContext context, String userId) async {
@@ -1460,8 +1510,8 @@ class _MedicalHistoryModule extends StatelessWidget {
                 for (final doc in docs) {
                   final data = doc.data();
                   final status = (data['status'] as String?) ?? 'pending';
-                  if (status != 'completed') continue;
                   final dt = _parseDate(data['appointmentTime'] ?? data['dateTime']);
+                  if (status != 'completed' || !dt.isBefore(DateTime.now())) continue;
                   completed.add(_AppointmentView(
                     id: doc.id,
                     doctorId: (data['doctorId'] as String?) ?? '',
@@ -1541,6 +1591,8 @@ class _ProfileSettingsModule extends StatelessWidget {
   final void Function(Map<String, dynamic>? data) onLoadProfile;
   final ValueChanged<bool> setProfileLoaded;
   final VoidCallback onSaveProfile;
+  final VoidCallback onUploadPhoto;
+  final bool isUploadingPhoto;
 
   const _ProfileSettingsModule({
     required this.userId,
@@ -1553,6 +1605,8 @@ class _ProfileSettingsModule extends StatelessWidget {
     required this.onLoadProfile,
     required this.setProfileLoaded,
     required this.onSaveProfile,
+    required this.onUploadPhoto,
+    required this.isUploadingPhoto,
   });
 
   @override
@@ -1628,6 +1682,21 @@ class _ProfileSettingsModule extends StatelessWidget {
                     TextField(
                       controller: photoController,
                       decoration: const InputDecoration(labelText: 'Profile photo URL'),
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: isUploadingPhoto ? null : onUploadPhoto,
+                        icon: isUploadingPhoto
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.photo_camera_outlined),
+                        label: Text(isUploadingPhoto ? 'Uploading...' : 'Upload photo'),
+                      ),
                     ),
                   ],
                 ),

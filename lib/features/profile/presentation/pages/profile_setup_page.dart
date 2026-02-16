@@ -8,6 +8,9 @@ import 'package:dbs/core/constants/admin_emails.dart';
 import 'package:dbs/core/widgets/app_background.dart';
 import 'package:dbs/core/widgets/app_card.dart';
 import 'package:dbs/core/widgets/reveal.dart';
+import 'package:dbs/features/auth/domain/usecases/upload_avatar_usecase.dart';
+import 'package:get_it/get_it.dart';
+import 'package:image_picker/image_picker.dart';
 
 class ProfileSetupPage extends StatefulWidget {
   const ProfileSetupPage({super.key});
@@ -18,8 +21,11 @@ class ProfileSetupPage extends StatefulWidget {
 
 class _ProfileSetupPageState extends State<ProfileSetupPage> {
   final _nameController = TextEditingController();
+  final _imagePicker = ImagePicker();
   bool _forceAdmin = false;
   bool _isSaving = false;
+  bool _isUploadingAvatar = false;
+  String? _uploadedAvatarUrl;
 
   @override
   void initState() {
@@ -34,12 +40,52 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
     super.dispose();
   }
 
+  Future<void> _pickAndUploadAvatar() async {
+    if (_isUploadingAvatar) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 1024,
+    );
+    if (picked == null) return;
+
+    setState(() => _isUploadingAvatar = true);
+    try {
+      final uploader = GetIt.instance<UploadAvatarUseCase>();
+      final url = await uploader(picked.path);
+      _uploadedAvatarUrl = url;
+      await user.updatePhotoURL(url);
+
+      final userRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+      final userSnap = await userRef.get();
+      if (userSnap.exists) {
+        await userRef.set({
+          'photoUrl': url,
+          'avatarUrl': url,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Avatar uploaded')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to upload avatar: $e')));
+    } finally {
+      if (mounted) setState(() => _isUploadingAvatar = false);
+    }
+  }
+
   Future<void> _finishSetup() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
     final displayName = _nameController.text.trim().isEmpty ? user.displayName ?? 'User' : _nameController.text.trim();
     final role = _forceAdmin ? 'admin' : 'user';
+    final photoUrl = _uploadedAvatarUrl ?? user.photoURL;
 
     setState(() => _isSaving = true);
 
@@ -56,8 +102,8 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         'displayName': displayName,
         'role': role,
         'email': user.email,
-        'photoUrl': user.photoURL,
-        'avatarUrl': user.photoURL,
+        'photoUrl': photoUrl,
+        'avatarUrl': photoUrl,
         'status': 'active',
         'isAdmin': role == 'admin',
         'lastLoginAt': now,
@@ -102,6 +148,9 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final avatarUrl = _uploadedAvatarUrl ?? user?.photoURL;
+    final hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Complete your profile'),
@@ -126,9 +175,13 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
               Reveal(
                 delay: const Duration(milliseconds: 50),
                 child: AppCard(
-                  child: Column(
-                    children: [
-                      const Icon(Icons.person_outline, size: 72),
+                    child: Column(
+                      children: [
+                        CircleAvatar(
+                          radius: 36,
+                          backgroundImage: hasAvatar ? NetworkImage(avatarUrl!) : null,
+                          child: hasAvatar ? null : const Icon(Icons.person_outline, size: 40),
+                        ),
                       const SizedBox(height: 16),
                       Text(
                         'One last step',
@@ -154,11 +207,15 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                       ),
                       const SizedBox(height: 16),
                       ElevatedButton.icon(
-                        onPressed: () async {
-                          // Placeholder for avatar upload (later use UploadAvatarUseCase)
-                        },
-                        icon: const Icon(Icons.photo_camera),
-                        label: const Text('Upload avatar (optional)'),
+                        onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+                        icon: _isUploadingAvatar
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.photo_camera),
+                        label: Text(_isUploadingAvatar ? 'Uploading...' : 'Upload avatar (optional)'),
                       ),
                     ],
                   ),

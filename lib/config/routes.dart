@@ -17,7 +17,6 @@ import '../features/booking/presentation/pages/doctor_appointments_page.dart';
 import '../features/booking/presentation/pages/patient_appointments_page.dart';
 import '../features/doctor/presentation/pages/doctor_profile_page.dart';
 import '../features/doctor/domain/entities/doctor.dart';
-import '../features/schedule/presentation/pages/schedule_page.dart';
 import '../features/patient/presentation/pages/patient_landing_page.dart';
 import '../features/patient/presentation/pages/patient_dashboard_page.dart';
 
@@ -69,7 +68,10 @@ class Routes {
       return BookingAppointmentPage(initialDoctor: doctor);
     },
     doctorProfile: (_) => const DoctorProfilePage(),
-    schedule: (_) => const SchedulePage(),
+    schedule: (_) => AuthGuard(
+          unauthenticated: const PatientLandingPage(),
+          authenticated: const PatientDashboardPage(initialIndex: 2),
+        ),
     authDebug: (_) => const AuthDebugPage(),
   };
 
