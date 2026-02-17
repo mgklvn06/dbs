@@ -2,9 +2,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:dbs/config/routes.dart';
+import 'package:dbs/core/constants/admin_emails.dart';
+import 'package:dbs/core/settings/system_settings_policy.dart';
 
 class GoogleSignInWebButton extends StatefulWidget {
   const GoogleSignInWebButton({super.key});
@@ -157,6 +160,8 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
     setState(() => _isLoading = true);
 
     try {
+      late final UserCredential userCredential;
+
       if (kIsWeb) {
         // On web, use Firebase's recommended approach: GoogleAuthProvider with signInWithPopup
         final GoogleAuthProvider googleProvider = GoogleAuthProvider();
@@ -167,7 +172,7 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
           'prompt': 'select_account',
         });
 
-        await FirebaseAuth.instance.signInWithPopup(googleProvider);
+        userCredential = await FirebaseAuth.instance.signInWithPopup(googleProvider);
       } else {
         // For mobile platforms, use the google_sign_in plugin
         GoogleSignInAccount? account = await _googleSignIn.signInSilently();
@@ -188,7 +193,28 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
           idToken: auth.idToken,
         );
 
-        await FirebaseAuth.instance.signInWithCredential(credential);
+        userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      }
+
+      final user = userCredential.user;
+      final policy = await SystemSettingsPolicy.load(FirebaseFirestore.instance);
+      final adminAccount = isAdminEmail(user?.email);
+      if (!policy.canSignIn(isAdmin: adminAccount)) {
+        await _blockCurrentSession(
+          title: 'Maintenance mode',
+          message: policy.maintenanceBlockedMessage(),
+        );
+        return;
+      }
+
+      final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
+      if (isNewUser && !policy.canRegisterPatient(isAdmin: adminAccount)) {
+        await _blockCurrentSession(
+          title: 'Registration disabled',
+          message: policy.patientRegistrationBlockedMessage(),
+          deleteUser: true,
+        );
+        return;
       }
 
       setState(() => _isLoading = false);
@@ -228,6 +254,27 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
           suggestion: 'Try again or check logs for details.',
         );
       }
+    }
+  }
+
+  Future<void> _blockCurrentSession({
+    required String title,
+    required String message,
+    bool deleteUser = false,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (deleteUser && user != null) {
+      try {
+        await user.delete();
+      } catch (_) {
+        // Best effort only. User might require re-auth on some providers.
+      }
+    }
+    await FirebaseAuth.instance.signOut();
+    await _googleSignIn.signOut();
+    if (mounted) {
+      setState(() => _isLoading = false);
+      _showErrorDialog(title: title, message: message);
     }
   }
 

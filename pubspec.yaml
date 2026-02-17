@@ -44,6 +44,9 @@ dependencies:
   dartz: ^0.10.1
   google_fonts: ^6.2.1
   image_picker: ^1.0.7
+  cross_file: ^0.3.4+2
+  pdf: ^3.11.3
+  printing: ^5.14.2
 
 dev_dependencies:
   flutter_test:

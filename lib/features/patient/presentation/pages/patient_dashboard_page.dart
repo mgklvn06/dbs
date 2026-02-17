@@ -1,5 +1,5 @@
 
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, unused_element_parameter, use_build_context_synchronously
 
 import 'dart:math';
 
@@ -8,6 +8,7 @@ import 'package:dbs/config/routes.dart';
 import 'package:dbs/core/widgets/app_background.dart';
 import 'package:dbs/core/widgets/app_card.dart';
 import 'package:dbs/core/widgets/reveal.dart';
+import 'package:dbs/core/services/appointment_policy_service.dart';
 import 'package:dbs/features/doctor/domain/entities/doctor.dart';
 import 'package:dbs/features/auth/domain/usecases/upload_avatar_usecase.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -304,16 +305,32 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
           onViewDoctor: (doc) => _showDoctorDetails(context, doc),
         );
       case 2:
-        return _PatientAppointmentsModule(
-          userId: userId,
-          searchController: _appointmentSearchController,
-          query: _appointmentQuery,
-          statusFilter: _appointmentStatus,
-          onQueryChanged: (value) => setState(() => _appointmentQuery = value),
-          onStatusChanged: (value) => setState(() => _appointmentStatus = value),
-          fetchDoctorNames: _prefetchDoctorNames,
-          onCancel: (id) => _cancelAppointment(context, id),
-          canCancel: _canCancelAppointment,
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance.collection('settings').doc('system').snapshots(),
+          builder: (context, settingsSnap) {
+            final settings = settingsSnap.data?.data() ?? <String, dynamic>{};
+            final booking = _readMap(settings['booking']);
+            final cancellationDeadlineHours = _readInt(booking['cancellationDeadlineHours'], 6);
+            return _PatientAppointmentsModule(
+              userId: userId,
+              searchController: _appointmentSearchController,
+              query: _appointmentQuery,
+              statusFilter: _appointmentStatus,
+              onQueryChanged: (value) => setState(() => _appointmentQuery = value),
+              onStatusChanged: (value) => setState(() => _appointmentStatus = value),
+              fetchDoctorNames: _prefetchDoctorNames,
+              onCancel: (id) => _cancelAppointment(
+                context,
+                id,
+                cancellationDeadlineHours: cancellationDeadlineHours,
+              ),
+              canCancel: (dateTime, status) => _canCancelAppointment(
+                dateTime,
+                status,
+                cancellationDeadlineHours,
+              ),
+            );
+          },
         );
       case 3:
         return _MedicalHistoryModule(
@@ -343,16 +360,36 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
   void _handleBookDoctor(BuildContext context, DoctorEntity doctor) {
     Navigator.pushNamed(context, Routes.bookingAppointment, arguments: doctor);
   }
-  bool _canCancelAppointment(DateTime dateTime, String status) {
-    const cutoffHours = 6;
+
+  int _readInt(dynamic raw, int fallback) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw) ?? fallback;
+    return fallback;
+  }
+
+  Map<String, dynamic> _readMap(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry('$key', value));
+    }
+    return <String, dynamic>{};
+  }
+
+  bool _canCancelAppointment(DateTime dateTime, String status, int cutoffHours) {
     if (status != 'pending' && status != 'confirmed' && status != 'accepted') {
       return false;
     }
-    final cutoff = DateTime.now().add(const Duration(hours: cutoffHours));
+    final safeCutoffHours = max(0, cutoffHours);
+    final cutoff = DateTime.now().add(Duration(hours: safeCutoffHours));
     return dateTime.isAfter(cutoff);
   }
 
-  Future<void> _cancelAppointment(BuildContext context, String appointmentId) async {
+  Future<void> _cancelAppointment(
+    BuildContext context,
+    String appointmentId, {
+    required int cancellationDeadlineHours,
+  }) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -376,10 +413,46 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
     if (confirmed != true) return;
 
     try {
-      await FirebaseFirestore.instance.collection('appointments').doc(appointmentId).update({
+      final apptRef = FirebaseFirestore.instance.collection('appointments').doc(appointmentId);
+      final apptSnap = await apptRef.get();
+      if (!apptSnap.exists) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Appointment no longer exists')),
+        );
+        return;
+      }
+      final data = apptSnap.data() ?? <String, dynamic>{};
+      final status = (data['status'] as String?) ?? 'pending';
+      final apptDate = _parseDate(data['appointmentTime'] ?? data['dateTime']);
+      final canCancel = _canCancelAppointment(apptDate, status, cancellationDeadlineHours);
+      if (!canCancel) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Cancellation closed. You can cancel only up to ${max(0, cancellationDeadlineHours)} hour(s) before the appointment.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      await apptRef.update({
         'status': 'cancelled',
+        'statusUpdatedByRole': 'patient',
+        'statusUpdatedById': FirebaseAuth.instance.currentUser?.uid,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      try {
+        await AppointmentPolicyService().onAppointmentStatusChanged(
+          appointmentId: appointmentId,
+          newStatus: 'cancelled',
+          actorRole: AppointmentActorRole.patient,
+        );
+      } catch (_) {
+        // Keep cancellation successful even if side effects are denied by rules.
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Appointment cancelled')));
     } catch (e) {
@@ -498,7 +571,9 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
     setState(() => _isUploadingPhoto = true);
     try {
       final uploader = GetIt.instance<UploadAvatarUseCase>();
-      final url = await uploader(picked.path);
+      final bytes = await picked.readAsBytes();
+      final fallbackName = picked.name.trim().isEmpty ? 'avatar.jpg' : picked.name.trim();
+      final url = await uploader(bytes: bytes, fileName: fallbackName);
       _profilePhotoController.text = url;
 
       await FirebaseFirestore.instance.collection('users').doc(userId).set({
@@ -1118,7 +1193,7 @@ class _FindDoctorsModule extends StatelessWidget {
 
                     return ListView.separated(
                       itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final doc = filtered[index];
                         final data = doc.data();
@@ -1396,7 +1471,7 @@ class _PatientAppointmentsModule extends StatelessWidget {
 
                     return ListView.separated(
                       itemCount: visible.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final appt = visible[index];
                         final dname = names[appt.doctorId] ?? appt.doctorId;
@@ -1533,7 +1608,7 @@ class _MedicalHistoryModule extends StatelessWidget {
                     final names = nameSnap.data ?? {};
                     return ListView.separated(
                       itemCount: completed.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final appt = completed[index];
                         final dname = names[appt.doctorId] ?? appt.doctorId;

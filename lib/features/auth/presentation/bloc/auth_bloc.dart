@@ -106,7 +106,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     emit(AuthLoading());
     try {
-      final avatarUrl = await uploadAvatarUseCase(event.filePath);
+      final avatarUrl = await uploadAvatarUseCase(filePath: event.filePath);
       emit(AvatarUploadSuccess(avatarUrl));
     } catch (e) {
       emit(AuthError(e.toString()));

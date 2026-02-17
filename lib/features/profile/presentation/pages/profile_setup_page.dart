@@ -55,7 +55,9 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
     setState(() => _isUploadingAvatar = true);
     try {
       final uploader = GetIt.instance<UploadAvatarUseCase>();
-      final url = await uploader(picked.path);
+      final bytes = await picked.readAsBytes();
+      final fallbackName = picked.name.trim().isEmpty ? 'avatar.jpg' : picked.name.trim();
+      final url = await uploader(bytes: bytes, fileName: fallbackName);
       _uploadedAvatarUrl = url;
       await user.updatePhotoURL(url);
 
@@ -179,7 +181,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                       children: [
                         CircleAvatar(
                           radius: 36,
-                          backgroundImage: hasAvatar ? NetworkImage(avatarUrl!) : null,
+                          backgroundImage: hasAvatar ? NetworkImage(avatarUrl) : null,
                           child: hasAvatar ? null : const Icon(Icons.person_outline, size: 40),
                         ),
                       const SizedBox(height: 16),

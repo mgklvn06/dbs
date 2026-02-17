@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dbs/config/routes.dart';
+import 'package:dbs/core/services/appointment_policy_service.dart';
 import 'package:dbs/core/widgets/app_background.dart';
 import 'package:dbs/core/widgets/app_card.dart';
 import 'package:dbs/core/widgets/reveal.dart';
@@ -110,6 +111,22 @@ class _DoctorProfilePageState extends State<DoctorProfilePage> {
   }
 
   String? _currentDoctorId() => FirebaseAuth.instance.currentUser?.uid;
+
+  Map<String, dynamic> _readMap(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry('$key', value));
+    }
+    return <String, dynamic>{};
+  }
+
+  Future<_DoctorBookingActionPolicy> _loadDoctorBookingActionPolicy() async {
+    final settingsSnap = await FirebaseFirestore.instance.collection('settings').doc('system').get();
+    final settings = settingsSnap.data() ?? <String, dynamic>{};
+    final booking = _readMap(settings['booking']);
+    final doctorBookingEnabled = (booking['doctorBookingEnabled'] as bool?) ?? true;
+    return _DoctorBookingActionPolicy(doctorBookingEnabled: doctorBookingEnabled);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -323,16 +340,25 @@ class _DoctorProfilePageState extends State<DoctorProfilePage> {
           fetchNames: _prefetchUserNames,
         );
       case 2:
-        return _DoctorAppointmentsModule(
-          doctorId: doctorId,
-          searchController: _appointmentSearchController,
-          query: _appointmentQuery,
-          statusFilter: _statusFilter,
-          onQueryChanged: (value) => setState(() => _appointmentQuery = value),
-          onStatusChanged: (value) => setState(() => _statusFilter = value),
-          fetchNames: _prefetchUserNames,
-          onUpdateStatus: (id, status) => _updateAppointmentStatus(context, id, status),
-          onAddNotes: (id, current) => _promptAppointmentNotes(context, id, current),
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance.collection('settings').doc('system').snapshots(),
+          builder: (context, settingsSnap) {
+            final settings = settingsSnap.data?.data() ?? <String, dynamic>{};
+            final booking = _readMap(settings['booking']);
+            final doctorBookingEnabled = (booking['doctorBookingEnabled'] as bool?) ?? true;
+            return _DoctorAppointmentsModule(
+              doctorId: doctorId,
+              searchController: _appointmentSearchController,
+              query: _appointmentQuery,
+              statusFilter: _statusFilter,
+              doctorBookingEnabled: doctorBookingEnabled,
+              onQueryChanged: (value) => setState(() => _appointmentQuery = value),
+              onStatusChanged: (value) => setState(() => _statusFilter = value),
+              fetchNames: _prefetchUserNames,
+              onUpdateStatus: (id, status) => _updateAppointmentStatus(context, id, status),
+              onAddNotes: (id, current) => _promptAppointmentNotes(context, id, current),
+            );
+          },
         );
       case 3:
         return _DoctorAvailabilityModule(
@@ -392,10 +418,50 @@ class _DoctorProfilePageState extends State<DoctorProfilePage> {
   }
   Future<void> _updateAppointmentStatus(BuildContext context, String appointmentId, String status) async {
     try {
-      await FirebaseFirestore.instance.collection('appointments').doc(appointmentId).update({
+      final policy = await _loadDoctorBookingActionPolicy();
+      if (!policy.doctorBookingEnabled) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Doctor appointment actions are disabled by admin settings.')),
+        );
+        return;
+      }
+
+      final apptRef = FirebaseFirestore.instance.collection('appointments').doc(appointmentId);
+      final apptSnap = await apptRef.get();
+      if (!apptSnap.exists) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Appointment no longer exists.')),
+        );
+        return;
+      }
+
+      final appt = apptSnap.data() ?? <String, dynamic>{};
+      final apptDate = _parseDate(appt['appointmentTime'] ?? appt['dateTime']);
+      if ((status == 'completed' || status == 'no_show') && apptDate.isAfter(DateTime.now())) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You can only mark completed/no-show after appointment time.')),
+        );
+        return;
+      }
+
+      await apptRef.update({
         'status': status,
+        'statusUpdatedByRole': 'doctor',
+        'statusUpdatedById': FirebaseAuth.instance.currentUser?.uid,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      try {
+        await AppointmentPolicyService().onAppointmentStatusChanged(
+          appointmentId: appointmentId,
+          newStatus: status,
+          actorRole: AppointmentActorRole.doctor,
+        );
+      } catch (_) {
+        // Keep appointment status update non-blocking if side effects are denied by rules.
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Appointment updated: $status')),
@@ -519,7 +585,9 @@ class _DoctorProfilePageState extends State<DoctorProfilePage> {
     setState(() => _isUploadingProfileImage = true);
     try {
       final uploader = GetIt.instance<UploadAvatarUseCase>();
-      final url = await uploader(picked.path);
+      final bytes = await picked.readAsBytes();
+      final fallbackName = picked.name.trim().isEmpty ? 'avatar.jpg' : picked.name.trim();
+      final url = await uploader(bytes: bytes, fileName: fallbackName);
       _profileImageController.text = url;
 
       final db = FirebaseFirestore.instance;
@@ -1453,6 +1521,7 @@ class _DoctorAppointmentsModule extends StatelessWidget {
   final TextEditingController searchController;
   final String query;
   final String statusFilter;
+  final bool doctorBookingEnabled;
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<String> onStatusChanged;
   final Future<Map<String, String>> Function(Set<String> ids) fetchNames;
@@ -1464,6 +1533,7 @@ class _DoctorAppointmentsModule extends StatelessWidget {
     required this.searchController,
     required this.query,
     required this.statusFilter,
+    required this.doctorBookingEnabled,
     required this.onQueryChanged,
     required this.onStatusChanged,
     required this.fetchNames,
@@ -1502,6 +1572,16 @@ class _DoctorAppointmentsModule extends StatelessWidget {
                       color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                     ),
               ),
+              if (!doctorBookingEnabled) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Appointment status actions are currently disabled by admin settings.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -1646,9 +1726,10 @@ class _DoctorAppointmentsModule extends StatelessWidget {
     final actions = <Widget>[];
 
     void addAction(String label, IconData icon, String status, {bool enabled = true}) {
+      final actionEnabled = doctorBookingEnabled && enabled;
       actions.add(
         OutlinedButton.icon(
-          onPressed: enabled ? () => onUpdateStatus(appt.id, status) : null,
+          onPressed: actionEnabled ? () => onUpdateStatus(appt.id, status) : null,
           icon: Icon(icon),
           label: Text(label),
         ),
@@ -1667,7 +1748,7 @@ class _DoctorAppointmentsModule extends StatelessWidget {
 
     actions.add(
       OutlinedButton.icon(
-        onPressed: () => onAddNotes(appt.id, appt.notes),
+        onPressed: doctorBookingEnabled ? () => onAddNotes(appt.id, appt.notes) : null,
         icon: const Icon(Icons.notes_outlined),
         label: const Text('Notes'),
       ),
@@ -2338,6 +2419,14 @@ class _AvailabilitySettings {
       blockedDates: (map['blockedDates'] as List?)?.map((e) => e.toString()).toList() ?? [],
     );
   }
+}
+
+class _DoctorBookingActionPolicy {
+  final bool doctorBookingEnabled;
+
+  const _DoctorBookingActionPolicy({
+    required this.doctorBookingEnabled,
+  });
 }
 
 DateTime _parseDate(dynamic raw) {

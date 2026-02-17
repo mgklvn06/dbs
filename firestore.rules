@@ -27,6 +27,77 @@ service cloud.firestore {
       return signedIn() && (hasAdminRole() || isAdminEmail());
     }
 
+    function hasSystemSettings() {
+      return exists(/databases/$(database)/documents/settings/system);
+    }
+
+    function systemSettings() {
+      return get(/databases/$(database)/documents/settings/system).data;
+    }
+
+    function maintenanceEnabled() {
+      return hasSystemSettings()
+          && (
+            ('maintenance' in systemSettings() && systemSettings().maintenance.enabled == true)
+            || ('maintenanceMode' in systemSettings() && systemSettings().maintenanceMode == true)
+          );
+    }
+
+    function bookingEnabled() {
+      return !hasSystemSettings()
+          || !('booking' in systemSettings())
+          || systemSettings().booking.enabled != false;
+    }
+
+    function doctorBookingActionsEnabled() {
+      return !hasSystemSettings()
+          || !('booking' in systemSettings())
+          || systemSettings().booking.doctorBookingEnabled != false;
+    }
+
+    function minNoticeHours() {
+      return hasSystemSettings()
+          && 'booking' in systemSettings()
+          && systemSettings().booking.minNoticeHours is int
+          && systemSettings().booking.minNoticeHours >= 0
+          ? systemSettings().booking.minNoticeHours
+          : 2;
+    }
+
+    function cancellationDeadlineHours() {
+      return hasSystemSettings()
+          && 'booking' in systemSettings()
+          && systemSettings().booking.cancellationDeadlineHours is int
+          && systemSettings().booking.cancellationDeadlineHours >= 0
+          ? systemSettings().booking.cancellationDeadlineHours
+          : 3;
+    }
+
+    function allowNewPatients() {
+      return !hasSystemSettings()
+          || !('registration' in systemSettings())
+          || systemSettings().registration.allowNewPatients != false;
+    }
+
+    function allowNewDoctors() {
+      return !hasSystemSettings()
+          || (
+              ('registration' in systemSettings() && systemSettings().registration.allowNewDoctors != false)
+              || (
+                  !('registration' in systemSettings())
+                  && (!('allowNewDoctors' in systemSettings()) || systemSettings().allowNewDoctors != false)
+                )
+            );
+    }
+
+    function patientRegistrationAllowed() {
+      return !maintenanceEnabled() && allowNewPatients();
+    }
+
+    function doctorRegistrationAllowed() {
+      return !maintenanceEnabled() && allowNewDoctors();
+    }
+
     function isSelf(uid) {
       return signedIn() && request.auth.uid == uid;
     }
@@ -57,7 +128,9 @@ service cloud.firestore {
         'updatedAt',
         'phone',
         'address',
-        'dateOfBirth'
+        'dateOfBirth',
+        'acceptedTermsVersion',
+        'termsAcceptedAt'
       ];
     }
 
@@ -65,7 +138,11 @@ service cloud.firestore {
       return isSelf(request.auth.uid)
           && resource.data.role == null
           && isValidRole(request.resource.data.role)
-          && (request.resource.data.role != 'admin' || isAdminEmail())
+          && (
+            (request.resource.data.role in ['user', 'patient'] && patientRegistrationAllowed())
+            || (request.resource.data.role == 'doctor' && doctorRegistrationAllowed())
+            || (request.resource.data.role == 'admin' && isAdminEmail())
+          )
           && request.resource.data.diff(resource.data).changedKeys().hasOnly([
             'uid',
             'email',
@@ -86,7 +163,11 @@ service cloud.firestore {
 
       allow create: if isSelf(uid)
           && isValidRole(request.resource.data.role)
-          && (request.resource.data.role != 'admin' || isAdminEmail());
+          && (
+            (request.resource.data.role in ['user', 'patient'] && patientRegistrationAllowed())
+            || (request.resource.data.role == 'doctor' && doctorRegistrationAllowed())
+            || (request.resource.data.role == 'admin' && isAdminEmail())
+          );
 
       allow update: if isAdmin()
           || canSelfSetInitialRole()
@@ -99,7 +180,8 @@ service cloud.firestore {
 
     match /doctors/{doctorId} {
       allow read: if signedIn();
-      allow create, update: if isAdmin() || (signedIn() && request.auth.uid == doctorId);
+      allow create: if isAdmin() || (signedIn() && request.auth.uid == doctorId && doctorRegistrationAllowed());
+      allow update: if isAdmin() || (signedIn() && request.auth.uid == doctorId);
       allow delete: if isAdmin();
     }
 
@@ -110,21 +192,52 @@ service cloud.firestore {
                   || resource.data.doctorId == request.auth.uid));
 
       allow create: if signedIn()
+          && !maintenanceEnabled()
+          && bookingEnabled()
           && request.resource.data.userId == request.auth.uid
           && (request.resource.data.status == null || isValidStatus(request.resource.data.status))
-          && (request.resource.data.appointmentTime is timestamp
-              || request.resource.data.dateTime is string);
+          && request.resource.data.appointmentTime is timestamp
+          && request.resource.data.appointmentTime >= request.time + duration.value(minNoticeHours(), 'h');
 
       allow update: if isAdmin()
           || (signedIn()
               && request.auth.uid == resource.data.doctorId
-              && isValidStatus(request.resource.data.status)
-              && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status', 'notes', 'updatedAt'])
-              && (!isFinalStatus(request.resource.data.status) || canFinalizeAppointment()))
+              && doctorBookingActionsEnabled()
+              && (
+                (
+                  isValidStatus(request.resource.data.status)
+                  && request.resource.data.statusUpdatedByRole == 'doctor'
+                  && request.resource.data.statusUpdatedById == request.auth.uid
+                  && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+                    'status',
+                    'notes',
+                    'statusUpdatedByRole',
+                    'statusUpdatedById',
+                    'updatedAt'
+                  ])
+                  && (!isFinalStatus(request.resource.data.status) || canFinalizeAppointment())
+                )
+                || (
+                  request.resource.data.status == resource.data.status
+                  && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+                    'notes',
+                    'updatedAt'
+                  ])
+                )
+              ))
           || (signedIn()
               && request.auth.uid == resource.data.userId
               && request.resource.data.status == 'cancelled'
-              && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status', 'updatedAt']));
+              && request.resource.data.statusUpdatedByRole == 'patient'
+              && request.resource.data.statusUpdatedById == request.auth.uid
+              && resource.data.appointmentTime is timestamp
+              && request.time + duration.value(cancellationDeadlineHours(), 'h') <= resource.data.appointmentTime
+              && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+                'status',
+                'statusUpdatedByRole',
+                'statusUpdatedById',
+                'updatedAt'
+              ]));
 
       allow delete: if isAdmin();
     }
@@ -158,6 +271,31 @@ service cloud.firestore {
     match /settings/{docId} {
       allow read: if signedIn();
       allow write: if isAdmin();
+    }
+
+    match /notification_events/{eventId} {
+      allow read: if isAdmin();
+      allow create: if signedIn()
+          && request.resource.data.type is string
+          && request.resource.data.appointmentId is string
+          && request.resource.data.status == 'pending'
+          && request.resource.data.createdAt == request.time;
+      allow update, delete: if isAdmin();
+    }
+
+    match /moderation_events/{eventId} {
+      allow read: if isAdmin();
+      allow create: if signedIn()
+          && request.resource.data.kind is string
+          && request.resource.data.targetId is string
+          && request.resource.data.doctorId is string
+          && (
+            isAdmin()
+            || request.resource.data.doctorId == request.auth.uid
+          )
+          && request.resource.data.status == 'pending_review'
+          && request.resource.data.createdAt == request.time;
+      allow update, delete: if isAdmin();
     }
 
     match /{document=**} {

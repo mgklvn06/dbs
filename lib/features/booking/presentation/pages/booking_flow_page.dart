@@ -37,7 +37,15 @@ class _BookingFlowPageState extends State<BookingFlowPage> {
       stream: settingsRef.snapshots(),
       builder: (context, settingsSnap) {
         final settings = settingsSnap.data?.data() ?? {};
-        final maintenanceMode = (settings['maintenanceMode'] as bool?) ?? false;
+        final maintenance = _readMap(settings['maintenance']);
+        final booking = _readMap(settings['booking']);
+        final maintenanceMode = (maintenance['enabled'] as bool?) ?? (settings['maintenanceMode'] as bool?) ?? false;
+        final bookingEnabled = (booking['enabled'] as bool?) ?? true;
+        final bookingDisabled = maintenanceMode || !bookingEnabled;
+        final maintenanceMessage = (maintenance['message'] as String?)?.trim();
+        final disabledMessage = (maintenanceMessage != null && maintenanceMessage.isNotEmpty)
+            ? maintenanceMessage
+            : 'Booking is temporarily disabled by the admin.';
 
         return Scaffold(
           appBar: AppBar(title: const Text('Book an appointment')),
@@ -47,19 +55,19 @@ class _BookingFlowPageState extends State<BookingFlowPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (maintenanceMode)
+                  if (bookingDisabled)
                     AppCard(
                       child: Row(
                         children: [
                           Icon(Icons.lock_outline, color: theme.colorScheme.primary),
                           const SizedBox(width: 12),
-                          const Expanded(
-                            child: Text('Booking is temporarily disabled by the admin.'),
+                          Expanded(
+                            child: Text(disabledMessage),
                           ),
                         ],
                       ),
                     ),
-                  if (maintenanceMode) const SizedBox(height: 12),
+                  if (bookingDisabled) const SizedBox(height: 12),
                   Reveal(
                     delay: const Duration(milliseconds: 40),
                     child: Text(
@@ -112,9 +120,9 @@ class _BookingFlowPageState extends State<BookingFlowPage> {
                             return _DoctorCard(
                               doctor: d,
                               onTap: () {
-                                if (maintenanceMode) {
+                                if (bookingDisabled) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Booking is currently disabled.')),
+                                    SnackBar(content: Text(disabledMessage)),
                                   );
                                   return;
                                 }
@@ -134,6 +142,14 @@ class _BookingFlowPageState extends State<BookingFlowPage> {
       },
     );
   }
+}
+
+Map<String, dynamic> _readMap(dynamic raw) {
+  if (raw is Map<String, dynamic>) return raw;
+  if (raw is Map) {
+    return raw.map((key, value) => MapEntry('$key', value));
+  }
+  return <String, dynamic>{};
 }
 
 class _DoctorCard extends StatelessWidget {

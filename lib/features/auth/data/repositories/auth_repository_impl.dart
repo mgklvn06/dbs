@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:dbs/features/auth/data/datasources/auth_remote_datasource.dart';
 import 'package:dbs/features/auth/data/datasources/cloudinary_datasource.dart';
 // import 'package:dbs/features/auth/data/models/user_models.dart';
@@ -33,9 +33,14 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<String> uploadAvatar(String filePath) {
-    final file = File(filePath);
-    return cloudinaryRemote.uploadAvatar(file);
+  Future<String> uploadAvatar({
+    required Uint8List bytes,
+    required String fileName,
+  }) {
+    return cloudinaryRemote.uploadAvatar(
+      bytes: bytes,
+      fileName: fileName,
+    );
   }
 
   @override

@@ -65,7 +65,15 @@ class _BookingAppointmentPageState extends State<BookingAppointmentPage> {
       stream: settingsRef.snapshots(),
       builder: (context, settingsSnap) {
         final settings = settingsSnap.data?.data() ?? {};
-        final maintenanceMode = (settings['maintenanceMode'] as bool?) ?? false;
+        final maintenance = _readMap(settings['maintenance']);
+        final booking = _readMap(settings['booking']);
+        final maintenanceMode = (maintenance['enabled'] as bool?) ?? (settings['maintenanceMode'] as bool?) ?? false;
+        final bookingEnabled = (booking['enabled'] as bool?) ?? true;
+        final bookingDisabled = maintenanceMode || !bookingEnabled;
+        final maintenanceMessage = (maintenance['message'] as String?)?.trim();
+        final disabledMessage = (maintenanceMessage != null && maintenanceMessage.isNotEmpty)
+            ? maintenanceMessage
+            : 'Booking is temporarily disabled by the admin.';
 
         return BlocProvider<BookingBloc>(
           create: (_) => sl<BookingBloc>(),
@@ -77,19 +85,19 @@ class _BookingAppointmentPageState extends State<BookingAppointmentPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (maintenanceMode)
+                    if (bookingDisabled)
                       AppCard(
                         child: Row(
                           children: [
                             Icon(Icons.lock_outline, color: Theme.of(context).colorScheme.primary),
                             const SizedBox(width: 12),
-                            const Expanded(
-                              child: Text('Booking is temporarily disabled by the admin.'),
+                            Expanded(
+                              child: Text(disabledMessage),
                             ),
                           ],
                         ),
                       ),
-                    if (maintenanceMode) const SizedBox(height: 12),
+                    if (bookingDisabled) const SizedBox(height: 12),
                     Reveal(
                       delay: const Duration(milliseconds: 50),
                       child: const Text(
@@ -123,7 +131,7 @@ class _BookingAppointmentPageState extends State<BookingAppointmentPage> {
                               items: doctors
                                   .map((d) => DropdownMenuItem(value: d, child: Text('${d.name} - ${d.specialty}')))
                                   .toList(),
-                              onChanged: maintenanceMode
+                              onChanged: bookingDisabled
                                   ? null
                                   : (d) {
                                       setState(() {
@@ -179,7 +187,7 @@ class _BookingAppointmentPageState extends State<BookingAppointmentPage> {
                                     if (start == null) return const SizedBox.shrink();
                                     final isSelected = _selectedSlotId == doc.id;
                                     return InkWell(
-                                      onTap: maintenanceMode
+                                      onTap: bookingDisabled
                                           ? null
                                           : () {
                                               setState(() {
@@ -245,7 +253,7 @@ class _BookingAppointmentPageState extends State<BookingAppointmentPage> {
                       builder: (context, state) {
                         if (state is BookingLoading) return const Center(child: CircularProgressIndicator());
                         return ElevatedButton(
-                          onPressed: maintenanceMode ? null : _submit,
+                          onPressed: bookingDisabled ? null : _submit,
                           child: const Text('Confirm booking'),
                         );
                       },
@@ -259,6 +267,14 @@ class _BookingAppointmentPageState extends State<BookingAppointmentPage> {
       },
     );
   }
+}
+
+Map<String, dynamic> _readMap(dynamic raw) {
+  if (raw is Map<String, dynamic>) return raw;
+  if (raw is Map) {
+    return raw.map((key, value) => MapEntry('$key', value));
+  }
+  return <String, dynamic>{};
 }
 
 String _formatSlot(DateTime start, DateTime? end) {

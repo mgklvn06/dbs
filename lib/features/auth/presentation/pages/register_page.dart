@@ -1,6 +1,9 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
 
 import 'package:dbs/config/routes.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:dbs/core/constants/admin_emails.dart';
+import 'package:dbs/core/settings/system_settings_policy.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:dbs/core/widgets/app_background.dart';
@@ -146,11 +149,28 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                   const SizedBox(height: 20),
                   ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      final email = _emailController.text.trim();
+                      final password = _passwordController.text;
+                      final adminAttempt = isAdminEmail(email);
+
+                      try {
+                        final policy = await SystemSettingsPolicy.load(FirebaseFirestore.instance);
+                        if (!policy.canRegisterPatient(isAdmin: adminAttempt)) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(policy.patientRegistrationBlockedMessage())),
+                          );
+                          return;
+                        }
+                      } catch (_) {
+                        // Continue registration when policy is unavailable to avoid full auth lockout.
+                      }
+
                       context.read<AuthBloc>().add(
                             RegisterRequested(
-                              _emailController.text.trim(),
-                              _passwordController.text,
+                              email,
+                              password,
                             ),
                           );
                     },

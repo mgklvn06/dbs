@@ -4,11 +4,16 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dbs/config/routes.dart';
+import 'package:dbs/core/services/appointment_policy_service.dart';
 import 'package:dbs/core/widgets/app_background.dart';
 import 'package:dbs/core/widgets/app_card.dart';
 import 'package:dbs/core/widgets/reveal.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:pdf/pdf.dart' as pdf;
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -705,6 +710,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     final now = DateTime.now();
     final start30 = now.subtract(const Duration(days: 30));
     final start7 = now.subtract(const Duration(days: 7));
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final tomorrow = todayStart.add(const Duration(days: 1));
+    final utilizationEnd = todayStart.add(const Duration(days: 30));
 
     final apptsSnap = await db
         .collection('appointments')
@@ -723,6 +731,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
     final doctorCounts = <String, int>{};
     final userSet = <String>{};
+    final bookingStatus = <String, int>{
+      'pending': 0,
+      'confirmed': 0,
+      'completed': 0,
+      'cancelled': 0,
+    };
+    var appointmentsToday = 0;
     var cancelled = 0;
 
     for (final data in appointments) {
@@ -734,9 +749,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       if (dt.isAfter(start7)) {
         userSet.add(userId);
       }
+      if (!dt.isBefore(todayStart) && dt.isBefore(tomorrow)) {
+        appointmentsToday += 1;
+      }
       if (status == 'cancelled') cancelled += 1;
       if (doctorId.isNotEmpty) {
         doctorCounts[doctorId] = (doctorCounts[doctorId] ?? 0) + 1;
+      }
+      if (status == 'pending') {
+        bookingStatus['pending'] = (bookingStatus['pending'] ?? 0) + 1;
+      } else if (status == 'confirmed' || status == 'accepted') {
+        bookingStatus['confirmed'] = (bookingStatus['confirmed'] ?? 0) + 1;
+      } else if (status == 'completed') {
+        bookingStatus['completed'] = (bookingStatus['completed'] ?? 0) + 1;
+      } else if (status == 'cancelled') {
+        bookingStatus['cancelled'] = (bookingStatus['cancelled'] ?? 0) + 1;
       }
 
       final key = _formatDay(DateTime(dt.year, dt.month, dt.day));
@@ -751,14 +778,96 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       ..sort((a, b) => b.value.compareTo(a.value));
     final topDoctorIds = topDoctors.take(3).map((e) => e.key).toList();
     final doctorNames = await _prefetchDoctorNames(topDoctorIds);
+    var totalSlots = 0;
+    var bookedSlots = 0;
+
+    Future<QuerySnapshot<Map<String, dynamic>>?> fetchDoctorSlots(String doctorId) async {
+      try {
+        return await db
+            .collection('availability')
+            .doc(doctorId)
+            .collection('slots')
+            .where('startTime', isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart))
+            .where('startTime', isLessThan: Timestamp.fromDate(utilizationEnd))
+            .get();
+      } catch (_) {
+        return null;
+      }
+    }
+
+    try {
+      final doctorsSnap = await db.collection('doctors').get();
+      final slotSnaps = await Future.wait(
+        doctorsSnap.docs.map((doc) => fetchDoctorSlots(doc.id)),
+      );
+      for (final slotsSnap in slotSnaps) {
+        if (slotsSnap == null) continue;
+        totalSlots += slotsSnap.docs.length;
+        for (final slotDoc in slotsSnap.docs) {
+          final data = slotDoc.data();
+          final isBooked = (data['isBooked'] as bool?) ?? false;
+          if (isBooked) bookedSlots += 1;
+        }
+      }
+    } catch (_) {
+      // Keep report resilient if utilization data cannot be fetched.
+    }
+
+    final doctorUtilizationRate = totalSlots == 0 ? 0.0 : bookedSlots / totalSlots;
+    var pendingNotificationEvents = 0;
+    var pendingModerationEvents = 0;
+    var appliedModerationEvents = 0;
+
+    try {
+      final pendingNotificationsSnap = await db
+          .collection('notification_events')
+          .where('status', isEqualTo: 'pending')
+          .get();
+      pendingNotificationEvents = pendingNotificationsSnap.docs.length;
+    } catch (_) {
+      pendingNotificationEvents = 0;
+    }
+
+    try {
+      final pendingModerationSnap = await db
+          .collection('moderation_events')
+          .where('status', isEqualTo: 'pending_review')
+          .get();
+      pendingModerationEvents = pendingModerationSnap.docs.length;
+    } catch (_) {
+      pendingModerationEvents = 0;
+    }
+
+    try {
+      final appliedModerationSnap = await db
+          .collection('moderation_events')
+          .where('status', isEqualTo: 'applied')
+          .get();
+      appliedModerationEvents = appliedModerationSnap.docs.length;
+    } catch (_) {
+      appliedModerationEvents = 0;
+    }
 
     return _AdminReportsData(
       appointmentsPerDay: dayOrder.map((key) => _ReportPoint(label: key, value: perDay[key] ?? 0)).toList(),
       mostBookedDoctors: topDoctors.take(3).map((e) {
         return _ReportPoint(label: doctorNames[e.key] ?? e.key, value: e.value);
       }).toList(),
+      bookingStatusBreakdown: [
+        _ReportPoint(label: 'pending', value: bookingStatus['pending'] ?? 0),
+        _ReportPoint(label: 'confirmed', value: bookingStatus['confirmed'] ?? 0),
+        _ReportPoint(label: 'completed', value: bookingStatus['completed'] ?? 0),
+        _ReportPoint(label: 'cancelled', value: bookingStatus['cancelled'] ?? 0),
+      ],
+      appointmentsToday: appointmentsToday,
+      bookedSlots: bookedSlots,
+      totalSlots: totalSlots,
+      doctorUtilizationRate: doctorUtilizationRate,
       cancellationRate: cancelRate,
       activeUsersWeekly: userSet.length,
+      pendingNotificationEvents: pendingNotificationEvents,
+      pendingModerationEvents: pendingModerationEvents,
+      appliedModerationEvents: appliedModerationEvents,
     );
   }
 }
@@ -1592,8 +1701,19 @@ class _AppointmentOversightModule extends StatelessWidget {
   Future<void> _updateAppointmentStatus(String id, String status) async {
     await FirebaseFirestore.instance.collection('appointments').doc(id).update({
       'status': status,
+      'statusUpdatedByRole': 'admin',
+      'statusUpdatedById': FirebaseAuth.instance.currentUser?.uid,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    try {
+      await AppointmentPolicyService().onAppointmentStatusChanged(
+        appointmentId: id,
+        newStatus: status,
+        actorRole: AppointmentActorRole.admin,
+      );
+    } catch (_) {
+      // Keep admin status update successful even if side effects fail.
+    }
   }
 
   Future<void> _toggleDispute(String id, bool disputed) async {
@@ -1656,6 +1776,62 @@ class _ReportsModule extends StatelessWidget {
     required this.onRefresh,
   });
 
+  Future<void> _previewPdf(BuildContext context, _AdminReportsData data) async {
+    try {
+      await Printing.layoutPdf(
+        onLayout: (_) => _buildAdminReportPdf(data),
+      );
+    } on MissingPluginException {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PDF plugin not available. Fully stop and re-run the app (not just hot reload).'),
+        ),
+      );
+    } on pw.TooManyPagesException {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PDF content overflowed page limits. Try refreshing and exporting again.'),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to preview PDF: $e')),
+      );
+    }
+  }
+
+  Future<void> _downloadPdf(BuildContext context, _AdminReportsData data) async {
+    try {
+      final bytes = await _buildAdminReportPdf(data);
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: _buildReportFileName(),
+      );
+    } on MissingPluginException {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PDF plugin not available. Fully stop and re-run the app (not just hot reload).'),
+        ),
+      );
+    } on pw.TooManyPagesException {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PDF content overflowed page limits. Try refreshing and exporting again.'),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to download PDF: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<_AdminReportsData>(
@@ -1682,9 +1858,52 @@ class _ReportsModule extends StatelessWidget {
                       ),
                     ),
                     TextButton.icon(
+                      onPressed: () => _previewPdf(context, data),
+                      icon: const Icon(Icons.picture_as_pdf_outlined),
+                      label: const Text('Preview PDF'),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: () => _downloadPdf(context, data),
+                      icon: const Icon(Icons.download_outlined),
+                      label: const Text('Download PDF'),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
                       onPressed: onRefresh,
                       icon: const Icon(Icons.refresh),
                       label: const Text('Refresh'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Operations snapshot',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        _MetricCard(
+                          title: 'Appointments today',
+                          value: data.appointmentsToday.toString(),
+                        ),
+                        _MetricCard(
+                          title: 'Utilization (30d)',
+                          value: '${(data.doctorUtilizationRate * 100).toStringAsFixed(1)}%',
+                        ),
+                        _MetricCard(
+                          title: 'Booked / total slots',
+                          value: '${data.bookedSlots} / ${data.totalSlots}',
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -1712,11 +1931,11 @@ class _ReportsModule extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Most booked doctors',
+                          'Booking status breakdown (30 days)',
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 8),
-                        _RankList(points: data.mostBookedDoctors),
+                        _PieReportChart(points: data.bookingStatusBreakdown),
                       ],
                     ),
                   );
@@ -1725,24 +1944,11 @@ class _ReportsModule extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Cancellation rate',
+                          'Most booked doctors',
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          '${(data.cancellationRate * 100).toStringAsFixed(1)}%',
-                          style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Active users (7 days)',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          data.activeUsersWeekly.toString(),
-                          style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w700),
-                        ),
+                        _RankList(points: data.mostBookedDoctors),
                       ],
                     ),
                   );
@@ -1764,6 +1970,79 @@ class _ReportsModule extends StatelessWidget {
                   );
                 },
               ),
+              const SizedBox(height: 14),
+              AppCard(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 640;
+                    if (isNarrow) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Cancellation rate',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '${(data.cancellationRate * 100).toStringAsFixed(1)}%',
+                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Active users (7 days)',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            data.activeUsersWeekly.toString(),
+                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Cancellation rate',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '${(data.cancellationRate * 100).toStringAsFixed(1)}%',
+                                style:
+                                    Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Active users (7 days)',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                data.activeUsersWeekly.toString(),
+                                style:
+                                    Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
             ],
           ),
         );
@@ -1780,11 +2059,67 @@ class _SettingsModule extends StatefulWidget {
 }
 
 class _SettingsModuleState extends State<_SettingsModule> {
-  final _limitController = TextEditingController();
+  final _maintenanceMessageController = TextEditingController();
+  final _minNoticeController = TextEditingController();
+  final _cancellationDeadlineController = TextEditingController();
+  final _maxPatientPerDayController = TextEditingController();
+  final _maxDoctorPerDayController = TextEditingController();
+  final _patientNoShowsController = TextEditingController();
+  final _doctorCancellationsController = TextEditingController();
+  final _termsVersionController = TextEditingController();
+
+  int _readInt(dynamic raw, int fallback) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw) ?? fallback;
+    return fallback;
+  }
+
+  Map<String, dynamic> _readMap(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry('$key', value));
+    }
+    return <String, dynamic>{};
+  }
+
+  DateTime? _readDateTime(dynamic raw) {
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+    if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw);
+    if (raw is num) return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
+    if (raw is String) return DateTime.tryParse(raw);
+    return null;
+  }
+
+  Future<void> _savePatch(
+    DocumentReference<Map<String, dynamic>> settingsRef,
+    Map<String, dynamic> patch,
+  ) async {
+    final adminId = FirebaseAuth.instance.currentUser?.uid ?? 'unknown-admin';
+    await settingsRef.set(
+      {
+        ...patch,
+        'system': {
+          'lastUpdatedAt': FieldValue.serverTimestamp(),
+          'updatedByAdminId': adminId,
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
 
   @override
   void dispose() {
-    _limitController.dispose();
+    _maintenanceMessageController.dispose();
+    _minNoticeController.dispose();
+    _cancellationDeadlineController.dispose();
+    _maxPatientPerDayController.dispose();
+    _maxDoctorPerDayController.dispose();
+    _patientNoShowsController.dispose();
+    _doctorCancellationsController.dispose();
+    _termsVersionController.dispose();
     super.dispose();
   }
 
@@ -1807,12 +2142,65 @@ class _SettingsModuleState extends State<_SettingsModule> {
           );
         }
         final data = snapshot.data?.data() ?? {};
-        final maintenanceMode = (data['maintenanceMode'] as bool?) ?? false;
-        final allowNewDoctors = (data['allowNewDoctors'] as bool?) ?? true;
-        final limit = (data['bookingLimitPerDay'] as num?)?.toInt();
-        final limitText = limit?.toString() ?? '';
-        if (_limitController.text != limitText) {
-          _limitController.text = limitText;
+        final maintenance = _readMap(data['maintenance']);
+        final registration = _readMap(data['registration']);
+        final booking = _readMap(data['booking']);
+        final moderation = _readMap(data['moderation']);
+        final notifications = _readMap(data['notifications']);
+        final security = _readMap(data['security']);
+
+        final maintenanceEnabled = (maintenance['enabled'] as bool?) ?? (data['maintenanceMode'] as bool?) ?? false;
+        final maintenanceMessage = (maintenance['message'] as String?) ?? 'System under maintenance. Please try again later.';
+
+        final allowNewPatients = (registration['allowNewPatients'] as bool?) ?? true;
+        final allowNewDoctors = (registration['allowNewDoctors'] as bool?) ?? (data['allowNewDoctors'] as bool?) ?? true;
+        final requireDoctorApproval = (registration['requireDoctorApproval'] as bool?) ?? true;
+
+        final bookingEnabled = (booking['enabled'] as bool?) ?? true;
+        final doctorBookingEnabled = (booking['doctorBookingEnabled'] as bool?) ?? true;
+        final autoConfirm = (booking['autoConfirm'] as bool?) ?? false;
+        final minNoticeHours = _readInt(booking['minNoticeHours'], 2);
+        final cancellationDeadlineHours = _readInt(booking['cancellationDeadlineHours'], 3);
+        final maxBookingsPerPatientPerDay = _readInt(booking['maxBookingsPerPatientPerDay'], 2);
+        final maxBookingsPerDoctorPerDay = _readInt(booking['maxBookingsPerDoctorPerDay'], 15);
+        final autoSuspendAfterPatientNoShows = _readInt(moderation['autoSuspendAfterPatientNoShows'], 0);
+        final autoSuspendAfterDoctorCancellations = _readInt(moderation['autoSuspendAfterDoctorCancellations'], 0);
+
+        final emailEnabled = (notifications['emailEnabled'] as bool?) ?? true;
+        final cancellationEnabled = (notifications['cancellationEnabled'] as bool?) ?? true;
+        final doctorReminderEnabled = (notifications['doctorReminderEnabled'] as bool?) ?? true;
+        final patientReminderEnabled = (notifications['patientReminderEnabled'] as bool?) ?? true;
+        final systemAlertsEnabled = (notifications['systemAlertsEnabled'] as bool?) ?? true;
+
+        final forceLogoutAllUsers = (security['forceLogoutAllUsers'] as bool?) ?? false;
+        final forceLogoutAt =
+            _readDateTime(security['forceLogoutAt'] ?? security['forceLogoutTimestamp'] ?? security['forceLogoutEpochMs']);
+        final enforceUpdatedTerms = (security['enforceUpdatedTerms'] as bool?) ?? false;
+        final termsVersion = max(1, _readInt(security['termsVersion'], 1));
+
+        if (_maintenanceMessageController.text != maintenanceMessage) {
+          _maintenanceMessageController.text = maintenanceMessage;
+        }
+        if (_minNoticeController.text != '$minNoticeHours') {
+          _minNoticeController.text = '$minNoticeHours';
+        }
+        if (_cancellationDeadlineController.text != '$cancellationDeadlineHours') {
+          _cancellationDeadlineController.text = '$cancellationDeadlineHours';
+        }
+        if (_maxPatientPerDayController.text != '$maxBookingsPerPatientPerDay') {
+          _maxPatientPerDayController.text = '$maxBookingsPerPatientPerDay';
+        }
+        if (_maxDoctorPerDayController.text != '$maxBookingsPerDoctorPerDay') {
+          _maxDoctorPerDayController.text = '$maxBookingsPerDoctorPerDay';
+        }
+        if (_patientNoShowsController.text != '$autoSuspendAfterPatientNoShows') {
+          _patientNoShowsController.text = '$autoSuspendAfterPatientNoShows';
+        }
+        if (_doctorCancellationsController.text != '$autoSuspendAfterDoctorCancellations') {
+          _doctorCancellationsController.text = '$autoSuspendAfterDoctorCancellations';
+        }
+        if (_termsVersionController.text != '$termsVersion') {
+          _termsVersionController.text = '$termsVersion';
         }
 
         return SingleChildScrollView(
@@ -1842,15 +2230,17 @@ class _SettingsModuleState extends State<_SettingsModule> {
                 child: Column(
                   children: [
                     SwitchListTile(
-                      value: maintenanceMode,
+                      value: maintenanceEnabled,
                       onChanged: (value) async {
                         try {
-                          await settingsRef.set(
+                          await _savePatch(
+                            settingsRef,
                             {
+                              'maintenance': {
+                                'enabled': value,
+                              },
                               'maintenanceMode': value,
-                              'updatedAt': FieldValue.serverTimestamp(),
                             },
-                            SetOptions(merge: true),
                           );
                         } catch (e) {
                           if (!mounted) return;
@@ -1864,15 +2254,86 @@ class _SettingsModuleState extends State<_SettingsModule> {
                     ),
                     const Divider(height: 1),
                     SwitchListTile(
+                      value: bookingEnabled,
+                      onChanged: (value) async {
+                        try {
+                          await _savePatch(
+                            settingsRef,
+                            {
+                              'booking': {
+                                'enabled': value,
+                              },
+                            },
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update setting: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Booking enabled'),
+                      subtitle: const Text('Allow patients to create new bookings'),
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      value: doctorBookingEnabled,
+                      onChanged: (value) async {
+                        try {
+                          await _savePatch(
+                            settingsRef,
+                            {
+                              'booking': {
+                                'doctorBookingEnabled': value,
+                              },
+                            },
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update setting: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Doctor booking actions enabled'),
+                      subtitle: const Text('Allow doctors to confirm/cancel/complete appointments'),
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      value: allowNewPatients,
+                      onChanged: (value) async {
+                        try {
+                          await _savePatch(
+                            settingsRef,
+                            {
+                              'registration': {
+                                'allowNewPatients': value,
+                              },
+                            },
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update setting: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Allow new patients'),
+                      subtitle: const Text('Permit new patient registrations'),
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
                       value: allowNewDoctors,
                       onChanged: (value) async {
                         try {
-                          await settingsRef.set(
+                          await _savePatch(
+                            settingsRef,
                             {
+                              'registration': {
+                                'allowNewDoctors': value,
+                              },
                               'allowNewDoctors': value,
-                              'updatedAt': FieldValue.serverTimestamp(),
                             },
-                            SetOptions(merge: true),
                           );
                         } catch (e) {
                           if (!mounted) return;
@@ -1884,6 +2345,29 @@ class _SettingsModuleState extends State<_SettingsModule> {
                       title: const Text('Allow new doctors'),
                       subtitle: const Text('Permit doctors to create profiles and submit availability'),
                     ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      value: requireDoctorApproval,
+                      onChanged: (value) async {
+                        try {
+                          await _savePatch(
+                            settingsRef,
+                            {
+                              'registration': {
+                                'requireDoctorApproval': value,
+                              },
+                            },
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update setting: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Require doctor approval'),
+                      subtitle: const Text('Keep doctors in pending state until approved by admin'),
+                    ),
                   ],
                 ),
               ),
@@ -1893,15 +2377,14 @@ class _SettingsModuleState extends State<_SettingsModule> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Global booking limits',
+                      'Maintenance message',
                       style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 12),
                     TextField(
-                      controller: _limitController,
-                      keyboardType: TextInputType.number,
+                      controller: _maintenanceMessageController,
                       decoration: const InputDecoration(
-                        labelText: 'Max appointments per day (optional)',
+                        labelText: 'Message shown during maintenance',
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -1909,15 +2392,127 @@ class _SettingsModuleState extends State<_SettingsModule> {
                       alignment: Alignment.centerLeft,
                       child: ElevatedButton.icon(
                         onPressed: () async {
-                          final raw = _limitController.text.trim();
-                          final parsed = int.tryParse(raw);
                           try {
-                            await settingsRef.set(
+                            await _savePatch(
+                              settingsRef,
                               {
-                                'bookingLimitPerDay': parsed,
-                                'updatedAt': FieldValue.serverTimestamp(),
+                                'maintenance': {
+                                  'message': _maintenanceMessageController.text.trim(),
+                                },
                               },
-                              SetOptions(merge: true),
+                            );
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Maintenance message saved')),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Failed to save settings: $e')),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.save_outlined),
+                        label: const Text('Save message'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Booking rules',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _minNoticeController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Minimum hours before booking allowed',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _cancellationDeadlineController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Cancellation deadline (hours before appointment)',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _maxPatientPerDayController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Max bookings per patient per day',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _maxDoctorPerDayController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Max bookings per doctor per day',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      value: autoConfirm,
+                      contentPadding: EdgeInsets.zero,
+                      onChanged: (value) async {
+                        try {
+                          await _savePatch(
+                            settingsRef,
+                            {
+                              'booking': {
+                                'autoConfirm': value,
+                              },
+                            },
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update setting: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Auto-confirm booking'),
+                      subtitle: const Text('New appointments are immediately confirmed'),
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          final minNotice = _readInt(_minNoticeController.text.trim(), minNoticeHours);
+                          final cancellationDeadline = _readInt(
+                            _cancellationDeadlineController.text.trim(),
+                            cancellationDeadlineHours,
+                          );
+                          final maxPatient = _readInt(
+                            _maxPatientPerDayController.text.trim(),
+                            maxBookingsPerPatientPerDay,
+                          );
+                          final maxDoctor = _readInt(
+                            _maxDoctorPerDayController.text.trim(),
+                            maxBookingsPerDoctorPerDay,
+                          );
+                          try {
+                            await _savePatch(
+                              settingsRef,
+                              {
+                                'booking': {
+                                  'minNoticeHours': max(0, minNotice),
+                                  'cancellationDeadlineHours': max(0, cancellationDeadline),
+                                  'maxBookingsPerPatientPerDay': max(0, maxPatient),
+                                  'maxBookingsPerDoctorPerDay': max(0, maxDoctor),
+                                },
+                              },
                             );
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -1932,6 +2527,324 @@ class _SettingsModuleState extends State<_SettingsModule> {
                         },
                         icon: const Icon(Icons.save_outlined),
                         label: const Text('Save settings'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Moderation rules',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _patientNoShowsController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Auto-suspend patient after no-shows (0 = off)',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _doctorCancellationsController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Auto-suspend doctor after cancellations (0 = off)',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          final patientNoShows = _readInt(
+                            _patientNoShowsController.text.trim(),
+                            autoSuspendAfterPatientNoShows,
+                          );
+                          final doctorCancels = _readInt(
+                            _doctorCancellationsController.text.trim(),
+                            autoSuspendAfterDoctorCancellations,
+                          );
+                          try {
+                            await _savePatch(
+                              settingsRef,
+                              {
+                                'moderation': {
+                                  'autoSuspendAfterPatientNoShows': max(0, patientNoShows),
+                                  'autoSuspendAfterDoctorCancellations': max(0, doctorCancels),
+                                },
+                              },
+                            );
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Moderation settings saved')),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Failed to save settings: $e')),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.save_outlined),
+                        label: const Text('Save moderation'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Notification settings',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: emailEnabled,
+                      onChanged: (value) async {
+                        try {
+                          await _savePatch(
+                            settingsRef,
+                            {
+                              'notifications': {
+                                'emailEnabled': value,
+                              },
+                            },
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update setting: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Email notifications enabled'),
+                      subtitle: const Text('Master switch for email/send queues'),
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: cancellationEnabled,
+                      onChanged: (value) async {
+                        try {
+                          await _savePatch(
+                            settingsRef,
+                            {
+                              'notifications': {
+                                'cancellationEnabled': value,
+                              },
+                            },
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update setting: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Cancellation notifications'),
+                      subtitle: const Text('Queue notifications when appointments are cancelled'),
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: doctorReminderEnabled,
+                      onChanged: (value) async {
+                        try {
+                          await _savePatch(
+                            settingsRef,
+                            {
+                              'notifications': {
+                                'doctorReminderEnabled': value,
+                              },
+                            },
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update setting: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Doctor reminder notifications'),
+                      subtitle: const Text('Allow doctor-oriented appointment updates'),
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: patientReminderEnabled,
+                      onChanged: (value) async {
+                        try {
+                          await _savePatch(
+                            settingsRef,
+                            {
+                              'notifications': {
+                                'patientReminderEnabled': value,
+                              },
+                            },
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update setting: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Patient reminder notifications'),
+                      subtitle: const Text('Allow patient-oriented appointment updates'),
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: systemAlertsEnabled,
+                      onChanged: (value) async {
+                        try {
+                          await _savePatch(
+                            settingsRef,
+                            {
+                              'notifications': {
+                                'systemAlertsEnabled': value,
+                              },
+                            },
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update setting: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('System alert notifications'),
+                      subtitle: const Text('Queue non-cancellation status changes'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Security controls',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: enforceUpdatedTerms,
+                      onChanged: (value) async {
+                        try {
+                          await _savePatch(
+                            settingsRef,
+                            {
+                              'security': {
+                                'enforceUpdatedTerms': value,
+                              },
+                            },
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update setting: $e')),
+                          );
+                        }
+                      },
+                      title: const Text('Enforce updated terms'),
+                      subtitle: const Text('Require users to accept the latest terms version'),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _termsVersionController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Terms version (integer)',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            final nextTermsVersion = max(
+                              1,
+                              _readInt(_termsVersionController.text.trim(), termsVersion),
+                            );
+                            try {
+                              await _savePatch(
+                                settingsRef,
+                                {
+                                  'security': {
+                                    'termsVersion': nextTermsVersion,
+                                  },
+                                },
+                              );
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Security settings saved')),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Failed to save settings: $e')),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Save security'),
+                        ),
+                        const SizedBox(width: 10),
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            try {
+                              await _savePatch(
+                                settingsRef,
+                                {
+                                  'security': {
+                                    'forceLogoutAllUsers': !forceLogoutAllUsers,
+                                    if (!forceLogoutAllUsers) 'forceLogoutAt': FieldValue.serverTimestamp(),
+                                  },
+                                },
+                              );
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    !forceLogoutAllUsers
+                                        ? 'Force logout activated'
+                                        : 'Force logout disabled',
+                                  ),
+                                ),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Failed to update setting: $e')),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.logout),
+                          label: Text(forceLogoutAllUsers ? 'Disable force logout' : 'Force logout all users'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      forceLogoutAt == null
+                          ? 'Last force logout: never'
+                          : 'Last force logout: ${_formatDateTime(forceLogoutAt)}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
                       ),
                     ),
                   ],
@@ -2122,6 +3035,124 @@ class _BarList extends StatelessWidget {
   }
 }
 
+class _PieReportChart extends StatelessWidget {
+  final List<_ReportPoint> points;
+
+  const _PieReportChart({required this.points});
+
+  @override
+  Widget build(BuildContext context) {
+    if (points.isEmpty) return const Text('No data yet');
+
+    final palette = [
+      Colors.amber.shade700,
+      Colors.blue.shade600,
+      Colors.green.shade600,
+      Colors.red.shade400,
+    ];
+    final entries = <MapEntry<_ReportPoint, Color>>[];
+    for (var i = 0; i < points.length; i += 1) {
+      entries.add(MapEntry(points[i], palette[i % palette.length]));
+    }
+
+    final nonZero = entries.where((e) => e.key.value > 0).toList();
+    final total = entries.fold<int>(0, (current, entry) => current + entry.key.value);
+    if (nonZero.isEmpty || total == 0) return const Text('No data yet');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Center(
+          child: SizedBox(
+            width: 180,
+            height: 180,
+            child: CustomPaint(
+              painter: _PieChartPainter(
+                sections: nonZero
+                    .map((entry) => _PieChartSection(
+                          value: entry.key.value.toDouble(),
+                          color: entry.value,
+                        ))
+                    .toList(),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        for (final entry in entries)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: entry.value,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text(entry.key.label)),
+                Text(
+                  '${entry.key.value} (${((entry.key.value / total) * 100).toStringAsFixed(1)}%)',
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PieChartSection {
+  final double value;
+  final Color color;
+
+  const _PieChartSection({
+    required this.value,
+    required this.color,
+  });
+}
+
+class _PieChartPainter extends CustomPainter {
+  final List<_PieChartSection> sections;
+
+  const _PieChartPainter({required this.sections});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (sections.isEmpty) return;
+    final total = sections.fold<double>(0, (current, section) => current + section.value);
+    if (total <= 0) return;
+
+    final radius = min(size.width, size.height) / 2;
+    final center = Offset(size.width / 2, size.height / 2);
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    var startAngle = -pi / 2;
+
+    final paint = Paint()..style = PaintingStyle.fill;
+    for (final section in sections) {
+      final sweep = (section.value / total) * 2 * pi;
+      paint.color = section.color;
+      canvas.drawArc(rect, startAngle, sweep, true, paint);
+      startAngle += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PieChartPainter oldDelegate) {
+    if (oldDelegate.sections.length != sections.length) return true;
+    for (var i = 0; i < sections.length; i += 1) {
+      if (oldDelegate.sections[i].value != sections[i].value ||
+          oldDelegate.sections[i].color != sections[i].color) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
 class _RankList extends StatelessWidget {
   final List<_ReportPoint> points;
 
@@ -2169,14 +3200,30 @@ class _AdminDashboardMetrics {
 class _AdminReportsData {
   final List<_ReportPoint> appointmentsPerDay;
   final List<_ReportPoint> mostBookedDoctors;
+  final List<_ReportPoint> bookingStatusBreakdown;
+  final int appointmentsToday;
+  final int bookedSlots;
+  final int totalSlots;
+  final double doctorUtilizationRate;
   final double cancellationRate;
   final int activeUsersWeekly;
+  final int pendingNotificationEvents;
+  final int pendingModerationEvents;
+  final int appliedModerationEvents;
 
   const _AdminReportsData({
     required this.appointmentsPerDay,
     required this.mostBookedDoctors,
+    required this.bookingStatusBreakdown,
+    required this.appointmentsToday,
+    required this.bookedSlots,
+    required this.totalSlots,
+    required this.doctorUtilizationRate,
     required this.cancellationRate,
     required this.activeUsersWeekly,
+    required this.pendingNotificationEvents,
+    required this.pendingModerationEvents,
+    required this.appliedModerationEvents,
   });
 }
 
@@ -2217,6 +3264,141 @@ String _formatRange(DateTimeRange range) {
   final start = _formatDay(range.start);
   final end = _formatDay(range.end);
   return '$start - $end';
+}
+
+String _buildReportFileName() {
+  final now = DateTime.now();
+  final y = now.year.toString().padLeft(4, '0');
+  final m = now.month.toString().padLeft(2, '0');
+  final d = now.day.toString().padLeft(2, '0');
+  return 'admin_report_$y$m$d.pdf';
+}
+
+Future<Uint8List> _buildAdminReportPdf(_AdminReportsData data) async {
+  final doc = pw.Document();
+  final now = DateTime.now();
+  final generatedAt = _formatDateTime(now);
+
+  pw.Widget metricCell(String title, String value) {
+    return pw.Container(
+      width: 250,
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: pdf.PdfColors.grey300),
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            title,
+            style: pw.TextStyle(fontSize: 10, color: pdf.PdfColors.grey700),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Text(
+            value,
+            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget pointTable(String title, List<_ReportPoint> points) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          title,
+          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 6),
+        pw.Table(
+          border: pw.TableBorder.all(color: pdf.PdfColors.grey300),
+          columnWidths: const {
+            0: pw.FlexColumnWidth(3),
+            1: pw.FlexColumnWidth(1.2),
+          },
+          children: [
+            pw.TableRow(
+              decoration: pw.BoxDecoration(color: pdf.PdfColors.grey100),
+              children: [
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(8),
+                  child: pw.Text(
+                    'Label',
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                  ),
+                ),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(8),
+                  child: pw.Text(
+                    'Value',
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                  ),
+                ),
+              ],
+            ),
+            ...points.map((point) {
+              return pw.TableRow(
+                children: [
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(8),
+                    child: pw.Text(point.label, style: const pw.TextStyle(fontSize: 10)),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(8),
+                    child: pw.Text('${point.value}', style: const pw.TextStyle(fontSize: 10)),
+                  ),
+                ],
+              );
+            }),
+          ],
+        ),
+      ],
+    );
+  }
+
+  doc.addPage(
+    pw.MultiPage(
+      margin: const pw.EdgeInsets.all(24),
+      maxPages: 100,
+      build: (context) {
+        return [
+          pw.Text(
+            'Admin Report',
+            style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'Generated at: $generatedAt',
+            style: pw.TextStyle(fontSize: 10, color: pdf.PdfColors.grey700),
+          ),
+          pw.SizedBox(height: 14),
+          pw.Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              metricCell('Appointments today', '${data.appointmentsToday}'),
+              metricCell('Active users (7d)', '${data.activeUsersWeekly}'),
+              metricCell('Cancellation rate', '${(data.cancellationRate * 100).toStringAsFixed(1)}%'),
+              metricCell('Utilization (30d)', '${(data.doctorUtilizationRate * 100).toStringAsFixed(1)}%'),
+              metricCell('Booked slots (30d)', '${data.bookedSlots}'),
+              metricCell('Total slots (30d)', '${data.totalSlots}'),
+            ],
+          ),
+          pw.SizedBox(height: 16),
+          pointTable('Booking status breakdown (30 days)', data.bookingStatusBreakdown),
+          pw.SizedBox(height: 12),
+          pointTable('Appointments per day (7 days)', data.appointmentsPerDay),
+          pw.SizedBox(height: 12),
+          pointTable('Most booked doctors', data.mostBookedDoctors),
+        ];
+      },
+    ),
+  );
+
+  return doc.save();
 }
 
 Future<Map<String, String>> _prefetchDoctorNames(List<String> ids) async {
