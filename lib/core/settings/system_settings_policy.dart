@@ -105,15 +105,18 @@ class SystemSettingsPolicy {
     final notifications = _readMap(settings['notifications']);
     final security = _readMap(settings['security']);
 
-    final maintenanceEnabled = (maintenance['enabled'] as bool?) ?? (settings['maintenanceMode'] as bool?) ?? false;
+    final maintenanceEnabled = _readBool(
+      maintenance['enabled'],
+      _readBool(settings['maintenanceMode'], false),
+    );
     final maintenanceMessage =
         (maintenance['message'] as String?) ?? 'System is under maintenance. Please try again later.';
-    final allowNewPatients = (registration['allowNewPatients'] as bool?) ?? true;
+    final allowNewPatients = _readBool(registration['allowNewPatients'], true);
     final allowNewDoctors =
-        (registration['allowNewDoctors'] as bool?) ?? (settings['allowNewDoctors'] as bool?) ?? true;
-    final bookingEnabled = (booking['enabled'] as bool?) ?? true;
-    final doctorBookingEnabled = (booking['doctorBookingEnabled'] as bool?) ?? true;
-    final autoConfirm = (booking['autoConfirm'] as bool?) ?? false;
+        _readBool(registration['allowNewDoctors'], _readBool(settings['allowNewDoctors'], true));
+    final bookingEnabled = _readBool(booking['enabled'], true);
+    final doctorBookingEnabled = _readBool(booking['doctorBookingEnabled'], true);
+    final autoConfirm = _readBool(booking['autoConfirm'], false);
     final forceLogoutAt = _readDateTime(
       security['forceLogoutAt'] ?? security['forceLogoutTimestamp'] ?? security['forceLogoutEpochMs'],
     );
@@ -132,14 +135,14 @@ class SystemSettingsPolicy {
       autoConfirm: autoConfirm,
       autoSuspendAfterPatientNoShows: _readInt(moderation['autoSuspendAfterPatientNoShows'], 0),
       autoSuspendAfterDoctorCancellations: _readInt(moderation['autoSuspendAfterDoctorCancellations'], 0),
-      emailNotificationsEnabled: (notifications['emailEnabled'] as bool?) ?? true,
-      cancellationNotificationsEnabled: (notifications['cancellationEnabled'] as bool?) ?? true,
-      doctorReminderEnabled: (notifications['doctorReminderEnabled'] as bool?) ?? true,
-      patientReminderEnabled: (notifications['patientReminderEnabled'] as bool?) ?? true,
-      systemAlertsEnabled: (notifications['systemAlertsEnabled'] as bool?) ?? true,
-      forceLogoutAllUsers: (security['forceLogoutAllUsers'] as bool?) ?? false,
+      emailNotificationsEnabled: _readBool(notifications['emailEnabled'], true),
+      cancellationNotificationsEnabled: _readBool(notifications['cancellationEnabled'], true),
+      doctorReminderEnabled: _readBool(notifications['doctorReminderEnabled'], true),
+      patientReminderEnabled: _readBool(notifications['patientReminderEnabled'], true),
+      systemAlertsEnabled: _readBool(notifications['systemAlertsEnabled'], true),
+      forceLogoutAllUsers: _readBool(security['forceLogoutAllUsers'], false),
       forceLogoutAt: forceLogoutAt,
-      enforceUpdatedTerms: (security['enforceUpdatedTerms'] as bool?) ?? false,
+      enforceUpdatedTerms: _readBool(security['enforceUpdatedTerms'], false),
       termsVersion: _readInt(security['termsVersion'], 1),
     );
   }
@@ -156,6 +159,17 @@ class SystemSettingsPolicy {
     if (raw is int) return raw;
     if (raw is num) return raw.toInt();
     if (raw is String) return int.tryParse(raw) ?? fallback;
+    return fallback;
+  }
+
+  static bool _readBool(dynamic raw, bool fallback) {
+    if (raw is bool) return raw;
+    if (raw is num) return raw != 0;
+    if (raw is String) {
+      final normalized = raw.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1' || normalized == 'yes') return true;
+      if (normalized == 'false' || normalized == '0' || normalized == 'no') return false;
+    }
     return fallback;
   }
 

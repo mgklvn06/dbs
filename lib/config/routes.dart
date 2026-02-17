@@ -19,6 +19,8 @@ import '../features/doctor/presentation/pages/doctor_profile_page.dart';
 import '../features/doctor/domain/entities/doctor.dart';
 import '../features/patient/presentation/pages/patient_landing_page.dart';
 import '../features/patient/presentation/pages/patient_dashboard_page.dart';
+import '../features/patient/presentation/pages/guest_doctors_page.dart';
+import '../features/patient/presentation/pages/guest_doctor_profile_page.dart';
 
 class Routes {
   static const splash = '/';
@@ -26,6 +28,8 @@ class Routes {
   static const login = '/login';
   static const register = '/register';
   static const authRedirect = '/auth';
+  static const guestDoctors = '/doctors';
+  static const guestDoctorProfile = '/doctors/profile';
   static const home = '/home';
   static const admin = '/admin';
   static const adminUsers = '/admin/users';
@@ -44,11 +48,25 @@ class Routes {
     landing: (_) => const PatientLandingPage(),
     login: (_) => LoginPage(),
     register: (_) => RegisterPage(),
+    guestDoctors: (context) {
+      final arg = ModalRoute.of(context)?.settings.arguments;
+      final args = (arg is GuestDoctorsPageArgs)
+          ? arg
+          : const GuestDoctorsPageArgs();
+      return GuestDoctorsPage(initialQuery: args.initialQuery);
+    },
+    guestDoctorProfile: (context) {
+      final arg = ModalRoute.of(context)?.settings.arguments;
+      if (arg is GuestDoctorProfileArgs) {
+        return GuestDoctorProfilePage(args: arg);
+      }
+      return const PatientLandingPage();
+    },
 
     authRedirect: (_) => AuthGuard(
-          unauthenticated: const PatientLandingPage(),
-          authenticated: const PatientDashboardPage(),
-        ),
+      unauthenticated: const PatientLandingPage(),
+      authenticated: const PatientDashboardPage(),
+    ),
 
     home: (_) => const PatientDashboardPage(),
     admin: (_) => const AdminDashboardPage(),
@@ -69,9 +87,9 @@ class Routes {
     },
     doctorProfile: (_) => const DoctorProfilePage(),
     schedule: (_) => AuthGuard(
-          unauthenticated: const PatientLandingPage(),
-          authenticated: const PatientDashboardPage(initialIndex: 2),
-        ),
+      unauthenticated: const PatientLandingPage(),
+      authenticated: const PatientDashboardPage(initialIndex: 2),
+    ),
     authDebug: (_) => const AuthDebugPage(),
   };
 

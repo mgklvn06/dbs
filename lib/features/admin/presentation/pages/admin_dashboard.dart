@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use, use_build_context_synchronously, unnecessary_underscores
+﻿// ignore_for_file: deprecated_member_use, use_build_context_synchronously, unnecessary_underscores
 
 import 'dart:math';
 
@@ -8,12 +8,23 @@ import 'package:dbs/core/services/appointment_policy_service.dart';
 import 'package:dbs/core/widgets/app_background.dart';
 import 'package:dbs/core/widgets/app_card.dart';
 import 'package:dbs/core/widgets/reveal.dart';
+import 'package:dbs/core/widgets/user_theme_toggle_button.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart' as pdf;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+
+part 'admin_dashboard_shared.dart';
+part 'admin_dashboard_overview_module.dart';
+part 'admin_dashboard_doctor_management_module.dart';
+part 'admin_dashboard_user_management_module.dart';
+part 'admin_dashboard_appointment_oversight_module.dart';
+part 'admin_dashboard_reports_module.dart';
+part 'admin_dashboard_basic_settings_module.dart';
+part 'admin_dashboard_settings_module.dart';
+part 'admin_dashboard_models.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -36,7 +47,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   final TextEditingController _doctorSearchController = TextEditingController();
   final TextEditingController _userSearchController = TextEditingController();
-  final TextEditingController _appointmentSearchController = TextEditingController();
+  final TextEditingController _appointmentSearchController =
+      TextEditingController();
 
   String _doctorQuery = '';
   String _userQuery = '';
@@ -106,6 +118,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   }
                 },
               ),
+              const UserThemeToggleButton(),
               IconButton(
                 tooltip: 'Sign out',
                 icon: const Icon(Icons.logout),
@@ -118,7 +131,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               const SizedBox(width: 8),
             ],
           ),
-          drawer: isWide ? null : Drawer(child: _buildSidebar(context, inDrawer: true)),
+          drawer: isWide
+              ? null
+              : Drawer(child: _buildSidebar(context, inDrawer: true)),
           body: AppBackground(
             child: Row(
               children: [
@@ -144,9 +159,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                                 Expanded(
                                   child: Text(
                                     _navItems[_selectedIndex].label,
-                                    style: theme.textTheme.headlineSmall?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                                    style: theme.textTheme.headlineSmall
+                                        ?.copyWith(fontWeight: FontWeight.w700),
                                   ),
                                 ),
                                 _QuickActionChip(
@@ -166,7 +180,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         Expanded(
                           child: AnimatedSwitcher(
                             duration: const Duration(milliseconds: 220),
-                            child: _buildModule(context),
+                            child: _safeBuildModule(context),
                           ),
                         ),
                       ],
@@ -180,6 +194,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       },
     );
   }
+
   Widget _buildSidebar(BuildContext context, {required bool inDrawer}) {
     final theme = Theme.of(context);
     final user = FirebaseAuth.instance.currentUser;
@@ -197,7 +212,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   color: theme.colorScheme.primary.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(Icons.admin_panel_settings, color: theme.colorScheme.primary),
+                child: Icon(
+                  Icons.admin_panel_settings,
+                  color: theme.colorScheme.primary,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -206,7 +224,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   children: [
                     Text(
                       'Admin Console',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -239,7 +259,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 children: [
                   Text(
                     user.displayName ?? 'Signed in',
-                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   Text(
                     user.email ?? '',
@@ -298,7 +320,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           doctorFilterId: _appointmentDoctorId,
           range: _appointmentRange,
           onQueryChanged: (value) => setState(() => _appointmentQuery = value),
-          onDoctorChanged: (value) => setState(() => _appointmentDoctorId = value),
+          onDoctorChanged: (value) =>
+              setState(() => _appointmentDoctorId = value),
           onRangeChanged: (range) => setState(() => _appointmentRange = range),
         );
       case 4:
@@ -307,7 +330,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           onRefresh: _refreshReports,
         );
       case 5:
-        return const _SettingsModule();
+        return const _BasicSettingsModule();
       default:
         return const SizedBox.shrink();
     }
@@ -320,41 +343,45 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       await db.runTransaction((tx) async {
         final userRef = db.collection('users').doc(doctorId);
         final doctorRef = db.collection('doctors').doc(doctorId);
-        tx.set(
-          userRef,
-          {
-            'role': 'doctor',
-            'status': active ? 'active' : 'suspended',
-            'isAdmin': false,
-            'updatedAt': now,
-          },
-          SetOptions(merge: true),
-        );
-        tx.set(
-          doctorRef,
-          {
-            'isActive': active,
-            'updatedAt': now,
-          },
-          SetOptions(merge: true),
-        );
+        tx.set(userRef, {
+          'role': 'doctor',
+          'status': active ? 'active' : 'suspended',
+          'isAdmin': false,
+          'updatedAt': now,
+        }, SetOptions(merge: true));
+        tx.set(doctorRef, {
+          'isActive': active,
+          'updatedAt': now,
+        }, SetOptions(merge: true));
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(active ? 'Doctor approved' : 'Doctor suspended')),
+        SnackBar(
+          content: Text(active ? 'Doctor approved' : 'Doctor suspended'),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update doctor: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update doctor: $e')));
     }
   }
-  Future<void> _editDoctorProfile(BuildContext context, QueryDocumentSnapshot<Map<String, dynamic>> doc) async {
+
+  Future<void> _editDoctorProfile(
+    BuildContext context,
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
     final data = doc.data();
-    final nameController = TextEditingController(text: data['name'] as String? ?? '');
-    final specialtyController = TextEditingController(text: data['specialty'] as String? ?? '');
-    final bioController = TextEditingController(text: data['bio'] as String? ?? '');
+    final nameController = TextEditingController(
+      text: data['name'] as String? ?? '',
+    );
+    final specialtyController = TextEditingController(
+      text: data['specialty'] as String? ?? '',
+    );
+    final bioController = TextEditingController(
+      text: data['bio'] as String? ?? '',
+    );
 
     final result = await showDialog<bool>(
       context: context,
@@ -410,32 +437,28 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       await db.runTransaction((tx) async {
         final doctorRef = db.collection('doctors').doc(doc.id);
         final userRef = db.collection('users').doc(doc.id);
-        tx.set(
-          doctorRef,
-          {
-            'name': nameController.text.trim(),
-            'specialty': specialtyController.text.trim(),
-            'bio': bioController.text.trim(),
-            'updatedAt': now,
-          },
-          SetOptions(merge: true),
-        );
+        tx.set(doctorRef, {
+          'name': nameController.text.trim(),
+          'specialty': specialtyController.text.trim(),
+          'bio': bioController.text.trim(),
+          'updatedAt': now,
+        }, SetOptions(merge: true));
         if (nameController.text.trim().isNotEmpty) {
-          tx.set(
-            userRef,
-            {
-              'displayName': nameController.text.trim(),
-              'updatedAt': now,
-            },
-            SetOptions(merge: true),
-          );
+          tx.set(userRef, {
+            'displayName': nameController.text.trim(),
+            'updatedAt': now,
+          }, SetOptions(merge: true));
         }
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Doctor updated')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Doctor updated')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update doctor: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update doctor: $e')));
     } finally {
       nameController.dispose();
       specialtyController.dispose();
@@ -443,7 +466,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     }
   }
 
-  Future<void> _showDoctorAvailability(BuildContext context, String doctorId, String doctorName) async {
+  Future<void> _showDoctorAvailability(
+    BuildContext context,
+    String doctorId,
+    String doctorName,
+  ) async {
     final db = FirebaseFirestore.instance;
     final slotsSnap = await db
         .collection('availability')
@@ -472,8 +499,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       final booked = (data['isBooked'] as bool?) ?? false;
                       return ListTile(
                         dense: true,
-                        leading: Icon(booked ? Icons.lock : Icons.lock_open, size: 18),
-                        title: Text('${_formatDateTime(start)} - ${_formatTime(end)}'),
+                        leading: Icon(
+                          booked ? Icons.lock : Icons.lock_open,
+                          size: 18,
+                        ),
+                        title: Text(
+                          '${_formatDateTime(start)} - ${_formatTime(end)}',
+                        ),
                         subtitle: Text(booked ? 'Booked' : 'Available'),
                       );
                     },
@@ -492,7 +524,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
-  Future<void> _showDoctorAppointments(BuildContext context, String doctorId, String doctorName) async {
+  Future<void> _showDoctorAppointments(
+    BuildContext context,
+    String doctorId,
+    String doctorName,
+  ) async {
     final db = FirebaseFirestore.instance;
     final appts = await db
         .collection('appointments')
@@ -515,7 +551,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     shrinkWrap: true,
                     itemBuilder: (context, index) {
                       final data = appts.docs[index].data();
-                      final dt = _parseDate(data['appointmentTime'] ?? data['dateTime']);
+                      final dt = _parseDate(
+                        data['appointmentTime'] ?? data['dateTime'],
+                      );
                       final status = (data['status'] as String?) ?? 'pending';
                       return ListTile(
                         dense: true,
@@ -537,6 +575,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       },
     );
   }
+
   Future<void> _setRole(
     BuildContext context,
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -555,7 +594,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         final userData = userSnap.data() ?? data;
         final name = (userData['displayName'] as String?) ?? 'Doctor';
         final email = userData['email'] as String?;
-        final photoUrl = (userData['photoUrl'] as String?) ?? (userData['avatarUrl'] as String?);
+        final photoUrl =
+            (userData['photoUrl'] as String?) ??
+            (userData['avatarUrl'] as String?);
 
         tx.update(userRef, {
           'role': role,
@@ -568,7 +609,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           final doctorData = <String, dynamic>{
             'userId': uid,
             'name': name,
-            'specialty': (doctorSnap.data()?['specialty'] as String?) ?? 'General',
+            'specialty':
+                (doctorSnap.data()?['specialty'] as String?) ?? 'General',
             'bio': (doctorSnap.data()?['bio'] as String?) ?? '',
             'email': email,
             'photoUrl': photoUrl,
@@ -586,10 +628,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         }
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Role updated to $role')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Role updated to $role')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update role: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update role: $e')));
     }
   }
 
@@ -616,14 +662,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         }
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Status set to $status')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Status set to $status')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update status: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update status: $e')));
     }
   }
 
-  Future<void> _showUserAppointments(BuildContext context, String userId, String label) async {
+  Future<void> _showUserAppointments(
+    BuildContext context,
+    String userId,
+    String label,
+  ) async {
     final db = FirebaseFirestore.instance;
     final appts = await db
         .collection('appointments')
@@ -646,7 +700,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     shrinkWrap: true,
                     itemBuilder: (context, index) {
                       final data = appts.docs[index].data();
-                      final dt = _parseDate(data['appointmentTime'] ?? data['dateTime']);
+                      final dt = _parseDate(
+                        data['appointmentTime'] ?? data['dateTime'],
+                      );
                       final status = (data['status'] as String?) ?? 'pending';
                       return ListTile(
                         dense: true,
@@ -679,12 +735,24 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     final doctorsFuture = db.collection('doctors').get();
     final todayApptsFuture = db
         .collection('appointments')
-        .where('appointmentTime', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where(
+          'appointmentTime',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+        )
         .where('appointmentTime', isLessThan: Timestamp.fromDate(end))
         .get();
-    final completedFuture = db.collection('appointments').where('status', isEqualTo: 'completed').get();
-    final activeFuture = db.collection('appointments').where('status', whereIn: ['pending', 'confirmed', 'accepted']).get();
-    final pendingDoctorsFuture = db.collection('doctors').where('isActive', isEqualTo: false).get();
+    final completedFuture = db
+        .collection('appointments')
+        .where('status', isEqualTo: 'completed')
+        .get();
+    final activeFuture = db
+        .collection('appointments')
+        .where('status', whereIn: ['pending', 'confirmed', 'accepted'])
+        .get();
+    final pendingDoctorsFuture = db
+        .collection('doctors')
+        .where('isActive', isEqualTo: false)
+        .get();
 
     final results = await Future.wait([
       usersFuture,
@@ -716,14 +784,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
     final apptsSnap = await db
         .collection('appointments')
-        .where('appointmentTime', isGreaterThanOrEqualTo: Timestamp.fromDate(start30))
+        .where(
+          'appointmentTime',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(start30),
+        )
         .get();
 
     final appointments = apptsSnap.docs.map((d) => d.data()).toList();
     final perDay = <String, int>{};
     final dayOrder = <String>[];
     for (var i = 6; i >= 0; i -= 1) {
-      final day = DateTime(now.year, now.month, now.day).subtract(Duration(days: i));
+      final day = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(Duration(days: i));
       final key = _formatDay(day);
       perDay[key] = 0;
       dayOrder.add(key);
@@ -781,13 +856,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     var totalSlots = 0;
     var bookedSlots = 0;
 
-    Future<QuerySnapshot<Map<String, dynamic>>?> fetchDoctorSlots(String doctorId) async {
+    Future<QuerySnapshot<Map<String, dynamic>>?> fetchDoctorSlots(
+      String doctorId,
+    ) async {
       try {
         return await db
             .collection('availability')
             .doc(doctorId)
             .collection('slots')
-            .where('startTime', isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart))
+            .where(
+              'startTime',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart),
+            )
             .where('startTime', isLessThan: Timestamp.fromDate(utilizationEnd))
             .get();
       } catch (_) {
@@ -813,7 +893,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       // Keep report resilient if utilization data cannot be fetched.
     }
 
-    final doctorUtilizationRate = totalSlots == 0 ? 0.0 : bookedSlots / totalSlots;
+    final doctorUtilizationRate = totalSlots == 0
+        ? 0.0
+        : bookedSlots / totalSlots;
     var pendingNotificationEvents = 0;
     var pendingModerationEvents = 0;
     var appliedModerationEvents = 0;
@@ -849,15 +931,26 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     }
 
     return _AdminReportsData(
-      appointmentsPerDay: dayOrder.map((key) => _ReportPoint(label: key, value: perDay[key] ?? 0)).toList(),
+      appointmentsPerDay: dayOrder
+          .map((key) => _ReportPoint(label: key, value: perDay[key] ?? 0))
+          .toList(),
       mostBookedDoctors: topDoctors.take(3).map((e) {
         return _ReportPoint(label: doctorNames[e.key] ?? e.key, value: e.value);
       }).toList(),
       bookingStatusBreakdown: [
         _ReportPoint(label: 'pending', value: bookingStatus['pending'] ?? 0),
-        _ReportPoint(label: 'confirmed', value: bookingStatus['confirmed'] ?? 0),
-        _ReportPoint(label: 'completed', value: bookingStatus['completed'] ?? 0),
-        _ReportPoint(label: 'cancelled', value: bookingStatus['cancelled'] ?? 0),
+        _ReportPoint(
+          label: 'confirmed',
+          value: bookingStatus['confirmed'] ?? 0,
+        ),
+        _ReportPoint(
+          label: 'completed',
+          value: bookingStatus['completed'] ?? 0,
+        ),
+        _ReportPoint(
+          label: 'cancelled',
+          value: bookingStatus['cancelled'] ?? 0,
+        ),
       ],
       appointmentsToday: appointmentsToday,
       bookedSlots: bookedSlots,
@@ -870,2549 +963,24 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       appliedModerationEvents: appliedModerationEvents,
     );
   }
-}
-class _AdminNavItem {
-  final String label;
-  final IconData icon;
 
-  const _AdminNavItem({required this.label, required this.icon});
-}
-
-class _NavTile extends StatelessWidget {
-  final _AdminNavItem item;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _NavTile({
-    required this.item,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = selected ? theme.colorScheme.primary : theme.colorScheme.onSurface;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? theme.colorScheme.primary.withOpacity(0.12) : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          children: [
-            Icon(item.icon, color: color),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                item.label,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  color: color,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _QuickActionChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _QuickActionChip({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primary.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: theme.colorScheme.primary.withOpacity(0.3)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: theme.colorScheme.primary),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DashboardModule extends StatelessWidget {
-  final Future<_AdminDashboardMetrics> metricsFuture;
-  final VoidCallback onRefresh;
-
-  const _DashboardModule({
-    required this.metricsFuture,
-    required this.onRefresh,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<_AdminDashboardMetrics>(
-      future: metricsFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Failed to load dashboard: ${snapshot.error}'));
-        }
-        final data = snapshot.data!;
-        return SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Reveal(
-                delay: const Duration(milliseconds: 50),
-                child: AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'System snapshot',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: onRefresh,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Refresh'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          _MetricCard(title: 'Total users', value: data.totalUsers.toString()),
-                          _MetricCard(title: 'Total doctors', value: data.totalDoctors.toString()),
-                          _MetricCard(title: 'Appointments today', value: data.appointmentsToday.toString()),
-                          _MetricCard(title: 'Active appointments', value: data.activeAppointments.toString()),
-                          _MetricCard(title: 'Completed appointments', value: data.completedAppointments.toString()),
-                          _MetricCard(title: 'Pending approvals', value: data.pendingApprovals.toString()),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Quick actions',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: const [
-                        _ActionChip(label: 'Approve doctors', icon: Icons.verified_user_outlined),
-                        _ActionChip(label: 'Review appointments', icon: Icons.event_available_outlined),
-                        _ActionChip(label: 'Audit users', icon: Icons.people_alt_outlined),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-class _DoctorManagementModule extends StatelessWidget {
-  final TextEditingController searchController;
-  final String query;
-  final ValueChanged<String> onQueryChanged;
-  final Future<void> Function(String doctorId, bool active) onApprove;
-  final Future<void> Function(String doctorId, bool active) onSuspend;
-  final Future<void> Function(BuildContext context, QueryDocumentSnapshot<Map<String, dynamic>> doc) onEdit;
-  final Future<void> Function(BuildContext context, String doctorId, String doctorName) onViewAvailability;
-  final Future<void> Function(BuildContext context, String doctorId, String doctorName) onViewAppointments;
-
-  const _DoctorManagementModule({
-    required this.searchController,
-    required this.query,
-    required this.onQueryChanged,
-    required this.onApprove,
-    required this.onSuspend,
-    required this.onEdit,
-    required this.onViewAvailability,
-    required this.onViewAppointments,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Doctor management',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Approve, suspend, and review doctor activity.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: searchController,
-                onChanged: onQueryChanged,
-                decoration: const InputDecoration(
-                  hintText: 'Search by name or specialty',
-                  prefixIcon: Icon(Icons.search),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        Expanded(
-          child: AppCard(
-            padding: const EdgeInsets.all(12),
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance.collection('doctors').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return const Center(child: Text('Failed to load doctors'));
-                }
-                final docs = snapshot.data?.docs ?? [];
-                if (docs.isEmpty) {
-                  return const Center(child: Text('No doctors found'));
-                }
-
-                final normalized = query.trim().toLowerCase();
-                final filtered = normalized.isEmpty
-                    ? docs
-                    : docs.where((d) {
-                        final data = d.data();
-                        final name = (data['name'] as String?) ?? '';
-                        final spec = (data['specialty'] as String?) ?? '';
-                        return name.toLowerCase().contains(normalized) || spec.toLowerCase().contains(normalized);
-                      }).toList();
-
-                if (filtered.isEmpty) {
-                  return const Center(child: Text('No matching doctors'));
-                }
-
-                return ListView.separated(
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    final doc = filtered[index];
-                    final data = doc.data();
-                    final name = (data['name'] as String?) ?? 'Doctor';
-                    final specialty = (data['specialty'] as String?) ?? 'General';
-                    final email = (data['email'] as String?) ?? 'no-email';
-                    final isActive = (data['isActive'] as bool?) ?? false;
-
-                    return AppCard(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const CircleAvatar(child: Icon(Icons.person_outline)),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      name,
-                                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                                    ),
-                                    Text(
-                                      '$specialty | $email',
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: theme.colorScheme.onSurface.withOpacity(0.6),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              _StatusPill(label: isActive ? 'Active' : 'Pending', active: isActive),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              if (!isActive)
-                                OutlinedButton.icon(
-                                  onPressed: () => onApprove(doc.id, true),
-                                  icon: const Icon(Icons.verified_outlined),
-                                  label: const Text('Approve'),
-                                ),
-                              if (isActive)
-                                OutlinedButton.icon(
-                                  onPressed: () => onSuspend(doc.id, false),
-                                  icon: const Icon(Icons.pause_circle_outline),
-                                  label: const Text('Suspend'),
-                                ),
-                              OutlinedButton.icon(
-                                onPressed: () => onEdit(context, doc),
-                                icon: const Icon(Icons.edit_outlined),
-                                label: const Text('Edit profile'),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () => onViewAvailability(context, doc.id, name),
-                                icon: const Icon(Icons.schedule_outlined),
-                                label: const Text('Availability'),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () => onViewAppointments(context, doc.id, name),
-                                icon: const Icon(Icons.event_available_outlined),
-                                label: const Text('Appointments'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-class _UserManagementModule extends StatelessWidget {
-  final TextEditingController searchController;
-  final String query;
-  final ValueChanged<String> onQueryChanged;
-  final Future<void> Function(BuildContext context, QueryDocumentSnapshot<Map<String, dynamic>> doc, String role) onSetRole;
-  final Future<void> Function(BuildContext context, QueryDocumentSnapshot<Map<String, dynamic>> doc, String status) onSetStatus;
-  final Future<void> Function(BuildContext context, String userId, String label) onViewHistory;
-
-  const _UserManagementModule({
-    required this.searchController,
-    required this.query,
-    required this.onQueryChanged,
-    required this.onSetRole,
-    required this.onSetStatus,
-    required this.onViewHistory,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final currentUser = FirebaseAuth.instance.currentUser;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'User management',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Review users, suspend access, and update roles.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: searchController,
-                onChanged: onQueryChanged,
-                decoration: const InputDecoration(
-                  hintText: 'Search by name or email',
-                  prefixIcon: Icon(Icons.search),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        Expanded(
-          child: AppCard(
-            padding: const EdgeInsets.all(12),
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance.collection('users').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return const Center(child: Text('Failed to load users'));
-                }
-                final docs = snapshot.data?.docs ?? [];
-                if (docs.isEmpty) {
-                  return const Center(child: Text('No users found'));
-                }
-
-                final normalized = query.trim().toLowerCase();
-                final filtered = normalized.isEmpty
-                    ? docs
-                    : docs.where((d) {
-                        final data = d.data();
-                        final name = (data['displayName'] as String?) ?? '';
-                        final email = (data['email'] as String?) ?? '';
-                        return name.toLowerCase().contains(normalized) || email.toLowerCase().contains(normalized);
-                      }).toList();
-
-                if (filtered.isEmpty) {
-                  return const Center(child: Text('No matching users'));
-                }
-
-                return ListView.separated(
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    final doc = filtered[index];
-                    final data = doc.data();
-                    final name = (data['displayName'] as String?) ?? 'Unknown';
-                    final email = (data['email'] as String?) ?? 'no-email';
-                    final role = (data['role'] as String?) ?? 'user';
-                    final status = (data['status'] as String?) ?? 'active';
-                    final isSelf = doc.id == currentUser?.uid;
-
-                    return AppCard(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const CircleAvatar(child: Icon(Icons.person)),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      name,
-                                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                                    ),
-                                    Text(
-                                      '$email | $role | $status${isSelf ? ' (you)' : ''}',
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: theme.colorScheme.onSurface.withOpacity(0.6),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              _StatusPill(label: status, active: status == 'active'),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () => onViewHistory(context, doc.id, name),
-                                icon: const Icon(Icons.history),
-                                label: const Text('History'),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: isSelf
-                                    ? null
-                                    : () => _showRoleSheet(context, doc, role, onSetRole),
-                                icon: const Icon(Icons.shield_outlined),
-                                label: const Text('Change role'),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: isSelf
-                                    ? null
-                                    : () => onSetStatus(context, doc, status == 'active' ? 'suspended' : 'active'),
-                                icon: const Icon(Icons.pause_circle_outline),
-                                label: Text(status == 'active' ? 'Suspend' : 'Activate'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _showRoleSheet(
-    BuildContext context,
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-    String role,
-    Future<void> Function(BuildContext context, QueryDocumentSnapshot<Map<String, dynamic>> doc, String role) onSetRole,
-  ) {
-    showModalBottomSheet(
-      context: context,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: Text((doc.data()['displayName'] as String?) ?? doc.id),
-                subtitle: Text('Current role: $role'),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                enabled: role != 'user',
-                leading: const Icon(Icons.person_outline),
-                title: const Text('Set role: user'),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  await onSetRole(context, doc, 'user');
-                },
-              ),
-              ListTile(
-                enabled: role != 'doctor',
-                leading: const Icon(Icons.medical_services_outlined),
-                title: const Text('Set role: doctor'),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  await onSetRole(context, doc, 'doctor');
-                },
-              ),
-              ListTile(
-                enabled: role != 'admin',
-                leading: const Icon(Icons.admin_panel_settings_outlined),
-                title: const Text('Set role: admin'),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  await onSetRole(context, doc, 'admin');
-                },
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-class _AppointmentOversightModule extends StatelessWidget {
-  final TextEditingController searchController;
-  final String query;
-  final String? doctorFilterId;
-  final DateTimeRange? range;
-  final ValueChanged<String> onQueryChanged;
-  final ValueChanged<String?> onDoctorChanged;
-  final ValueChanged<DateTimeRange?> onRangeChanged;
-
-  const _AppointmentOversightModule({
-    required this.searchController,
-    required this.query,
-    required this.doctorFilterId,
-    required this.range,
-    required this.onQueryChanged,
-    required this.onDoctorChanged,
-    required this.onRangeChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Appointment oversight',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Search, filter, and manage appointments.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: searchController,
-                onChanged: onQueryChanged,
-                decoration: const InputDecoration(
-                  hintText: 'Search by patient or doctor',
-                  prefixIcon: Icon(Icons.search),
-                ),
-              ),
-              const SizedBox(height: 12),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isNarrow = constraints.maxWidth < 640;
-                  if (isNarrow) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _DoctorFilter(
-                          selectedDoctorId: doctorFilterId,
-                          onChanged: onDoctorChanged,
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () async {
-                                  final now = DateTime.now();
-                                  final picked = await showDateRangePicker(
-                                    context: context,
-                                    firstDate: DateTime(now.year - 1),
-                                    lastDate: DateTime(now.year + 1),
-                                    initialDateRange: range,
-                                  );
-                                  onRangeChanged(picked);
-                                },
-                                icon: const Icon(Icons.date_range_outlined),
-                                label: Text(range == null ? 'Filter by date' : _formatRange(range!)),
-                              ),
-                            ),
-                            if (range != null) ...[
-                              const SizedBox(width: 8),
-                              IconButton(
-                                tooltip: 'Clear date filter',
-                                onPressed: () => onRangeChanged(null),
-                                icon: const Icon(Icons.close),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
-                    );
-                  }
-                  return Row(
-                    children: [
-                      Expanded(
-                        child: _DoctorFilter(
-                          selectedDoctorId: doctorFilterId,
-                          onChanged: onDoctorChanged,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          final now = DateTime.now();
-                          final picked = await showDateRangePicker(
-                            context: context,
-                            firstDate: DateTime(now.year - 1),
-                            lastDate: DateTime(now.year + 1),
-                            initialDateRange: range,
-                          );
-                          onRangeChanged(picked);
-                        },
-                        icon: const Icon(Icons.date_range_outlined),
-                        label: Text(range == null ? 'Filter by date' : _formatRange(range!)),
-                      ),
-                      if (range != null) ...[
-                        const SizedBox(width: 8),
-                        IconButton(
-                          tooltip: 'Clear date filter',
-                          onPressed: () => onRangeChanged(null),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ],
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        Expanded(
-          child: AppCard(
-            padding: const EdgeInsets.all(12),
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('appointments')
-                  .orderBy('appointmentTime', descending: true)
-                  .limit(200)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return const Center(child: Text('Failed to load appointments'));
-                }
-                final docs = snapshot.data?.docs ?? [];
-                if (docs.isEmpty) {
-                  return const Center(child: Text('No appointments found'));
-                }
-
-                return FutureBuilder<Map<String, Map<String, String>>>(
-                  future: _prefetchNames(docs),
-                  builder: (context, nameSnap) {
-                    if (nameSnap.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final users = nameSnap.data?['users'] ?? {};
-                    final doctors = nameSnap.data?['doctors'] ?? {};
-
-                    final normalized = query.trim().toLowerCase();
-                    final filtered = docs.where((doc) {
-                      final data = doc.data();
-                      final doctorId = (data['doctorId'] as String?) ?? '';
-                      final userId = (data['userId'] as String?) ?? '';
-                      final dt = _parseDate(data['appointmentTime'] ?? data['dateTime']);
-                      final matchDoctor = doctorFilterId == null || doctorFilterId == doctorId;
-                      final matchRange = range == null || (dt.isAfter(range!.start.subtract(const Duration(seconds: 1))) && dt.isBefore(range!.end.add(const Duration(days: 1))));
-                      if (!matchDoctor || !matchRange) return false;
-                      if (normalized.isEmpty) return true;
-                      final userName = (users[userId] ?? userId).toLowerCase();
-                      final doctorName = (doctors[doctorId] ?? doctorId).toLowerCase();
-                      return userName.contains(normalized) || doctorName.contains(normalized) || userId.contains(normalized) || doctorId.contains(normalized);
-                    }).toList();
-
-                    if (filtered.isEmpty) {
-                      return const Center(child: Text('No matching appointments'));
-                    }
-
-                    return ListView.separated(
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        final doc = filtered[index];
-                        final data = doc.data();
-                        final userId = (data['userId'] as String?) ?? '';
-                        final doctorId = (data['doctorId'] as String?) ?? '';
-                        final status = (data['status'] as String?) ?? 'pending';
-                        final disputed = (data['disputed'] as bool?) ?? false;
-                        final dt = _parseDate(data['appointmentTime'] ?? data['dateTime']);
-                        final patient = users[userId] ?? userId;
-                        final doctor = doctors[doctorId] ?? doctorId;
-
-                        return AppCard(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      '$patient -> $doctor',
-                                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                                    ),
-                                  ),
-                                  _StatusPill(label: status, active: status == 'confirmed' || status == 'accepted' || status == 'pending'),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '${_formatDateTime(dt)} | ${disputed ? 'Disputed' : 'Normal'}',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  OutlinedButton.icon(
-                                    onPressed: () => _updateAppointmentStatus(doc.id, 'cancelled'),
-                                    icon: const Icon(Icons.cancel_outlined),
-                                    label: const Text('Cancel'),
-                                  ),
-                                  OutlinedButton.icon(
-                                    onPressed: () => _toggleDispute(doc.id, !disputed),
-                                    icon: Icon(disputed ? Icons.flag_outlined : Icons.flag),
-                                    label: Text(disputed ? 'Clear dispute' : 'Mark dispute'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _updateAppointmentStatus(String id, String status) async {
-    await FirebaseFirestore.instance.collection('appointments').doc(id).update({
-      'status': status,
-      'statusUpdatedByRole': 'admin',
-      'statusUpdatedById': FirebaseAuth.instance.currentUser?.uid,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+  Widget _safeBuildModule(BuildContext context) {
     try {
-      await AppointmentPolicyService().onAppointmentStatusChanged(
-        appointmentId: id,
-        newStatus: status,
-        actorRole: AppointmentActorRole.admin,
-      );
-    } catch (_) {
-      // Keep admin status update successful even if side effects fail.
-    }
-  }
-
-  Future<void> _toggleDispute(String id, bool disputed) async {
-    await FirebaseFirestore.instance.collection('appointments').doc(id).update({
-      'disputed': disputed,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  Future<Map<String, Map<String, String>>> _prefetchNames(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) async {
-    final firestore = FirebaseFirestore.instance;
-
-    final userIds = <String>{};
-    final doctorIds = <String>{};
-    for (var d in docs) {
-      final data = d.data();
-      userIds.add((data['userId'] as String?) ?? '');
-      doctorIds.add((data['doctorId'] as String?) ?? '');
-    }
-
-    final users = <String, String>{};
-    final doctors = <String, String>{};
-
-    Future<void> fetchUsers() async {
-      final ids = userIds.where((e) => e.isNotEmpty).toList();
-      const chunk = 10;
-      for (var i = 0; i < ids.length; i += chunk) {
-        final slice = ids.sublist(i, min(i + chunk, ids.length));
-        final q = await firestore.collection('users').where(FieldPath.documentId, whereIn: slice).get();
-        for (var d in q.docs) {
-          final data = d.data();
-          users[d.id] = (data['displayName'] as String?) ?? (data['email'] as String?) ?? d.id;
-        }
-      }
-    }
-
-    Future<void> fetchDoctors() async {
-      final ids = doctorIds.where((e) => e.isNotEmpty).toList();
-      const chunk = 10;
-      for (var i = 0; i < ids.length; i += chunk) {
-        final slice = ids.sublist(i, min(i + chunk, ids.length));
-        final q = await firestore.collection('doctors').where(FieldPath.documentId, whereIn: slice).get();
-        for (var d in q.docs) {
-          final data = d.data();
-          doctors[d.id] = (data['name'] as String?) ?? d.id;
-        }
-      }
-    }
-
-    await Future.wait([fetchUsers(), fetchDoctors()]);
-    return {'users': users, 'doctors': doctors};
-  }
-}
-class _ReportsModule extends StatelessWidget {
-  final Future<_AdminReportsData> reportsFuture;
-  final VoidCallback onRefresh;
-
-  const _ReportsModule({
-    required this.reportsFuture,
-    required this.onRefresh,
-  });
-
-  Future<void> _previewPdf(BuildContext context, _AdminReportsData data) async {
-    try {
-      await Printing.layoutPdf(
-        onLayout: (_) => _buildAdminReportPdf(data),
-      );
-    } on MissingPluginException {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('PDF plugin not available. Fully stop and re-run the app (not just hot reload).'),
-        ),
-      );
-    } on pw.TooManyPagesException {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('PDF content overflowed page limits. Try refreshing and exporting again.'),
-        ),
-      );
+      return _buildModule(context);
     } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to preview PDF: $e')),
+      return Center(
+        child: AppCard(
+          child: Text(
+            'Module failed to render: $e',
+            textAlign: TextAlign.center,
+          ),
+        ),
       );
     }
   }
-
-  Future<void> _downloadPdf(BuildContext context, _AdminReportsData data) async {
-    try {
-      final bytes = await _buildAdminReportPdf(data);
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: _buildReportFileName(),
-      );
-    } on MissingPluginException {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('PDF plugin not available. Fully stop and re-run the app (not just hot reload).'),
-        ),
-      );
-    } on pw.TooManyPagesException {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('PDF content overflowed page limits. Try refreshing and exporting again.'),
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to download PDF: $e')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<_AdminReportsData>(
-      future: reportsFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Failed to load reports: ${snapshot.error}'));
-        }
-        final data = snapshot.data!;
-        return SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppCard(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Reports & analytics',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () => _previewPdf(context, data),
-                      icon: const Icon(Icons.picture_as_pdf_outlined),
-                      label: const Text('Preview PDF'),
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton.icon(
-                      onPressed: () => _downloadPdf(context, data),
-                      icon: const Icon(Icons.download_outlined),
-                      label: const Text('Download PDF'),
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton.icon(
-                      onPressed: onRefresh,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Refresh'),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Operations snapshot',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        _MetricCard(
-                          title: 'Appointments today',
-                          value: data.appointmentsToday.toString(),
-                        ),
-                        _MetricCard(
-                          title: 'Utilization (30d)',
-                          value: '${(data.doctorUtilizationRate * 100).toStringAsFixed(1)}%',
-                        ),
-                        _MetricCard(
-                          title: 'Booked / total slots',
-                          value: '${data.bookedSlots} / ${data.totalSlots}',
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Appointments per day (7 days)',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 12),
-                    _BarList(points: data.appointmentsPerDay),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isNarrow = constraints.maxWidth < 760;
-                  final leftCard = AppCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Booking status breakdown (30 days)',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        _PieReportChart(points: data.bookingStatusBreakdown),
-                      ],
-                    ),
-                  );
-                  final rightCard = AppCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Most booked doctors',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        _RankList(points: data.mostBookedDoctors),
-                      ],
-                    ),
-                  );
-                  if (isNarrow) {
-                    return Column(
-                      children: [
-                        leftCard,
-                        const SizedBox(height: 12),
-                        rightCard,
-                      ],
-                    );
-                  }
-                  return Row(
-                    children: [
-                      Expanded(child: leftCard),
-                      const SizedBox(width: 12),
-                      Expanded(child: rightCard),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 14),
-              AppCard(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isNarrow = constraints.maxWidth < 640;
-                    if (isNarrow) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Cancellation rate',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '${(data.cancellationRate * 100).toStringAsFixed(1)}%',
-                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Active users (7 days)',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            data.activeUsersWeekly.toString(),
-                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ],
-                      );
-                    }
-                    return Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Cancellation rate',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '${(data.cancellationRate * 100).toStringAsFixed(1)}%',
-                                style:
-                                    Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Active users (7 days)',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                data.activeUsersWeekly.toString(),
-                                style:
-                                    Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 }
 
-class _SettingsModule extends StatefulWidget {
-  const _SettingsModule();
 
-  @override
-  State<_SettingsModule> createState() => _SettingsModuleState();
-}
 
-class _SettingsModuleState extends State<_SettingsModule> {
-  final _maintenanceMessageController = TextEditingController();
-  final _minNoticeController = TextEditingController();
-  final _cancellationDeadlineController = TextEditingController();
-  final _maxPatientPerDayController = TextEditingController();
-  final _maxDoctorPerDayController = TextEditingController();
-  final _patientNoShowsController = TextEditingController();
-  final _doctorCancellationsController = TextEditingController();
-  final _termsVersionController = TextEditingController();
 
-  int _readInt(dynamic raw, int fallback) {
-    if (raw is int) return raw;
-    if (raw is num) return raw.toInt();
-    if (raw is String) return int.tryParse(raw) ?? fallback;
-    return fallback;
-  }
 
-  Map<String, dynamic> _readMap(dynamic raw) {
-    if (raw is Map<String, dynamic>) return raw;
-    if (raw is Map) {
-      return raw.map((key, value) => MapEntry('$key', value));
-    }
-    return <String, dynamic>{};
-  }
-
-  DateTime? _readDateTime(dynamic raw) {
-    if (raw is Timestamp) return raw.toDate();
-    if (raw is DateTime) return raw;
-    if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw);
-    if (raw is num) return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
-    if (raw is String) return DateTime.tryParse(raw);
-    return null;
-  }
-
-  Future<void> _savePatch(
-    DocumentReference<Map<String, dynamic>> settingsRef,
-    Map<String, dynamic> patch,
-  ) async {
-    final adminId = FirebaseAuth.instance.currentUser?.uid ?? 'unknown-admin';
-    await settingsRef.set(
-      {
-        ...patch,
-        'system': {
-          'lastUpdatedAt': FieldValue.serverTimestamp(),
-          'updatedByAdminId': adminId,
-        },
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
-  }
-
-  @override
-  void dispose() {
-    _maintenanceMessageController.dispose();
-    _minNoticeController.dispose();
-    _cancellationDeadlineController.dispose();
-    _maxPatientPerDayController.dispose();
-    _maxDoctorPerDayController.dispose();
-    _patientNoShowsController.dispose();
-    _doctorCancellationsController.dispose();
-    _termsVersionController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final settingsRef = FirebaseFirestore.instance.collection('settings').doc('system');
-    final theme = Theme.of(context);
-
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: settingsRef.snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(
-            child: AppCard(
-              child: Text(
-                'Failed to load settings: ${snapshot.error}',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          );
-        }
-        final data = snapshot.data?.data() ?? {};
-        final maintenance = _readMap(data['maintenance']);
-        final registration = _readMap(data['registration']);
-        final booking = _readMap(data['booking']);
-        final moderation = _readMap(data['moderation']);
-        final notifications = _readMap(data['notifications']);
-        final security = _readMap(data['security']);
-
-        final maintenanceEnabled = (maintenance['enabled'] as bool?) ?? (data['maintenanceMode'] as bool?) ?? false;
-        final maintenanceMessage = (maintenance['message'] as String?) ?? 'System under maintenance. Please try again later.';
-
-        final allowNewPatients = (registration['allowNewPatients'] as bool?) ?? true;
-        final allowNewDoctors = (registration['allowNewDoctors'] as bool?) ?? (data['allowNewDoctors'] as bool?) ?? true;
-        final requireDoctorApproval = (registration['requireDoctorApproval'] as bool?) ?? true;
-
-        final bookingEnabled = (booking['enabled'] as bool?) ?? true;
-        final doctorBookingEnabled = (booking['doctorBookingEnabled'] as bool?) ?? true;
-        final autoConfirm = (booking['autoConfirm'] as bool?) ?? false;
-        final minNoticeHours = _readInt(booking['minNoticeHours'], 2);
-        final cancellationDeadlineHours = _readInt(booking['cancellationDeadlineHours'], 3);
-        final maxBookingsPerPatientPerDay = _readInt(booking['maxBookingsPerPatientPerDay'], 2);
-        final maxBookingsPerDoctorPerDay = _readInt(booking['maxBookingsPerDoctorPerDay'], 15);
-        final autoSuspendAfterPatientNoShows = _readInt(moderation['autoSuspendAfterPatientNoShows'], 0);
-        final autoSuspendAfterDoctorCancellations = _readInt(moderation['autoSuspendAfterDoctorCancellations'], 0);
-
-        final emailEnabled = (notifications['emailEnabled'] as bool?) ?? true;
-        final cancellationEnabled = (notifications['cancellationEnabled'] as bool?) ?? true;
-        final doctorReminderEnabled = (notifications['doctorReminderEnabled'] as bool?) ?? true;
-        final patientReminderEnabled = (notifications['patientReminderEnabled'] as bool?) ?? true;
-        final systemAlertsEnabled = (notifications['systemAlertsEnabled'] as bool?) ?? true;
-
-        final forceLogoutAllUsers = (security['forceLogoutAllUsers'] as bool?) ?? false;
-        final forceLogoutAt =
-            _readDateTime(security['forceLogoutAt'] ?? security['forceLogoutTimestamp'] ?? security['forceLogoutEpochMs']);
-        final enforceUpdatedTerms = (security['enforceUpdatedTerms'] as bool?) ?? false;
-        final termsVersion = max(1, _readInt(security['termsVersion'], 1));
-
-        if (_maintenanceMessageController.text != maintenanceMessage) {
-          _maintenanceMessageController.text = maintenanceMessage;
-        }
-        if (_minNoticeController.text != '$minNoticeHours') {
-          _minNoticeController.text = '$minNoticeHours';
-        }
-        if (_cancellationDeadlineController.text != '$cancellationDeadlineHours') {
-          _cancellationDeadlineController.text = '$cancellationDeadlineHours';
-        }
-        if (_maxPatientPerDayController.text != '$maxBookingsPerPatientPerDay') {
-          _maxPatientPerDayController.text = '$maxBookingsPerPatientPerDay';
-        }
-        if (_maxDoctorPerDayController.text != '$maxBookingsPerDoctorPerDay') {
-          _maxDoctorPerDayController.text = '$maxBookingsPerDoctorPerDay';
-        }
-        if (_patientNoShowsController.text != '$autoSuspendAfterPatientNoShows') {
-          _patientNoShowsController.text = '$autoSuspendAfterPatientNoShows';
-        }
-        if (_doctorCancellationsController.text != '$autoSuspendAfterDoctorCancellations') {
-          _doctorCancellationsController.text = '$autoSuspendAfterDoctorCancellations';
-        }
-        if (_termsVersionController.text != '$termsVersion') {
-          _termsVersionController.text = '$termsVersion';
-        }
-
-        return SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'System settings',
-                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Configure operational limits and access policies.',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurface.withOpacity(0.6),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              AppCard(
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      value: maintenanceEnabled,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'maintenance': {
-                                'enabled': value,
-                              },
-                              'maintenanceMode': value,
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Maintenance mode'),
-                      subtitle: const Text('Disable booking and sign-ins for non-admin users'),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      value: bookingEnabled,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'booking': {
-                                'enabled': value,
-                              },
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Booking enabled'),
-                      subtitle: const Text('Allow patients to create new bookings'),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      value: doctorBookingEnabled,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'booking': {
-                                'doctorBookingEnabled': value,
-                              },
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Doctor booking actions enabled'),
-                      subtitle: const Text('Allow doctors to confirm/cancel/complete appointments'),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      value: allowNewPatients,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'registration': {
-                                'allowNewPatients': value,
-                              },
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Allow new patients'),
-                      subtitle: const Text('Permit new patient registrations'),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      value: allowNewDoctors,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'registration': {
-                                'allowNewDoctors': value,
-                              },
-                              'allowNewDoctors': value,
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Allow new doctors'),
-                      subtitle: const Text('Permit doctors to create profiles and submit availability'),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      value: requireDoctorApproval,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'registration': {
-                                'requireDoctorApproval': value,
-                              },
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Require doctor approval'),
-                      subtitle: const Text('Keep doctors in pending state until approved by admin'),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Maintenance message',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _maintenanceMessageController,
-                      decoration: const InputDecoration(
-                        labelText: 'Message shown during maintenance',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: ElevatedButton.icon(
-                        onPressed: () async {
-                          try {
-                            await _savePatch(
-                              settingsRef,
-                              {
-                                'maintenance': {
-                                  'message': _maintenanceMessageController.text.trim(),
-                                },
-                              },
-                            );
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Maintenance message saved')),
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed to save settings: $e')),
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.save_outlined),
-                        label: const Text('Save message'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Booking rules',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _minNoticeController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Minimum hours before booking allowed',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _cancellationDeadlineController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Cancellation deadline (hours before appointment)',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _maxPatientPerDayController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Max bookings per patient per day',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _maxDoctorPerDayController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Max bookings per doctor per day',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      value: autoConfirm,
-                      contentPadding: EdgeInsets.zero,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'booking': {
-                                'autoConfirm': value,
-                              },
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Auto-confirm booking'),
-                      subtitle: const Text('New appointments are immediately confirmed'),
-                    ),
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: ElevatedButton.icon(
-                        onPressed: () async {
-                          final minNotice = _readInt(_minNoticeController.text.trim(), minNoticeHours);
-                          final cancellationDeadline = _readInt(
-                            _cancellationDeadlineController.text.trim(),
-                            cancellationDeadlineHours,
-                          );
-                          final maxPatient = _readInt(
-                            _maxPatientPerDayController.text.trim(),
-                            maxBookingsPerPatientPerDay,
-                          );
-                          final maxDoctor = _readInt(
-                            _maxDoctorPerDayController.text.trim(),
-                            maxBookingsPerDoctorPerDay,
-                          );
-                          try {
-                            await _savePatch(
-                              settingsRef,
-                              {
-                                'booking': {
-                                  'minNoticeHours': max(0, minNotice),
-                                  'cancellationDeadlineHours': max(0, cancellationDeadline),
-                                  'maxBookingsPerPatientPerDay': max(0, maxPatient),
-                                  'maxBookingsPerDoctorPerDay': max(0, maxDoctor),
-                                },
-                              },
-                            );
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Settings saved')),
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed to save settings: $e')),
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.save_outlined),
-                        label: const Text('Save settings'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Moderation rules',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _patientNoShowsController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Auto-suspend patient after no-shows (0 = off)',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _doctorCancellationsController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Auto-suspend doctor after cancellations (0 = off)',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: ElevatedButton.icon(
-                        onPressed: () async {
-                          final patientNoShows = _readInt(
-                            _patientNoShowsController.text.trim(),
-                            autoSuspendAfterPatientNoShows,
-                          );
-                          final doctorCancels = _readInt(
-                            _doctorCancellationsController.text.trim(),
-                            autoSuspendAfterDoctorCancellations,
-                          );
-                          try {
-                            await _savePatch(
-                              settingsRef,
-                              {
-                                'moderation': {
-                                  'autoSuspendAfterPatientNoShows': max(0, patientNoShows),
-                                  'autoSuspendAfterDoctorCancellations': max(0, doctorCancels),
-                                },
-                              },
-                            );
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Moderation settings saved')),
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed to save settings: $e')),
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.save_outlined),
-                        label: const Text('Save moderation'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Notification settings',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: emailEnabled,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'notifications': {
-                                'emailEnabled': value,
-                              },
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Email notifications enabled'),
-                      subtitle: const Text('Master switch for email/send queues'),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: cancellationEnabled,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'notifications': {
-                                'cancellationEnabled': value,
-                              },
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Cancellation notifications'),
-                      subtitle: const Text('Queue notifications when appointments are cancelled'),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: doctorReminderEnabled,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'notifications': {
-                                'doctorReminderEnabled': value,
-                              },
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Doctor reminder notifications'),
-                      subtitle: const Text('Allow doctor-oriented appointment updates'),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: patientReminderEnabled,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'notifications': {
-                                'patientReminderEnabled': value,
-                              },
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Patient reminder notifications'),
-                      subtitle: const Text('Allow patient-oriented appointment updates'),
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: systemAlertsEnabled,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'notifications': {
-                                'systemAlertsEnabled': value,
-                              },
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('System alert notifications'),
-                      subtitle: const Text('Queue non-cancellation status changes'),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Security controls',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: enforceUpdatedTerms,
-                      onChanged: (value) async {
-                        try {
-                          await _savePatch(
-                            settingsRef,
-                            {
-                              'security': {
-                                'enforceUpdatedTerms': value,
-                              },
-                            },
-                          );
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to update setting: $e')),
-                          );
-                        }
-                      },
-                      title: const Text('Enforce updated terms'),
-                      subtitle: const Text('Require users to accept the latest terms version'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _termsVersionController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Terms version (integer)',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            final nextTermsVersion = max(
-                              1,
-                              _readInt(_termsVersionController.text.trim(), termsVersion),
-                            );
-                            try {
-                              await _savePatch(
-                                settingsRef,
-                                {
-                                  'security': {
-                                    'termsVersion': nextTermsVersion,
-                                  },
-                                },
-                              );
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Security settings saved')),
-                              );
-                            } catch (e) {
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Failed to save settings: $e')),
-                              );
-                            }
-                          },
-                          icon: const Icon(Icons.save_outlined),
-                          label: const Text('Save security'),
-                        ),
-                        const SizedBox(width: 10),
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            try {
-                              await _savePatch(
-                                settingsRef,
-                                {
-                                  'security': {
-                                    'forceLogoutAllUsers': !forceLogoutAllUsers,
-                                    if (!forceLogoutAllUsers) 'forceLogoutAt': FieldValue.serverTimestamp(),
-                                  },
-                                },
-                              );
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    !forceLogoutAllUsers
-                                        ? 'Force logout activated'
-                                        : 'Force logout disabled',
-                                  ),
-                                ),
-                              );
-                            } catch (e) {
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Failed to update setting: $e')),
-                              );
-                            }
-                          },
-                          icon: const Icon(Icons.logout),
-                          label: Text(forceLogoutAllUsers ? 'Disable force logout' : 'Force logout all users'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      forceLogoutAt == null
-                          ? 'Last force logout: never'
-                          : 'Last force logout: ${_formatDateTime(forceLogoutAt)}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withOpacity(0.7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-class _DoctorFilter extends StatelessWidget {
-  final String? selectedDoctorId;
-  final ValueChanged<String?> onChanged;
-
-  const _DoctorFilter({
-    required this.selectedDoctorId,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance.collection('doctors').snapshots(),
-      builder: (context, snapshot) {
-        final docs = snapshot.data?.docs ?? [];
-        final items = <DropdownMenuItem<String?>>[
-          const DropdownMenuItem(value: null, child: Text('All doctors')),
-          ...docs.map((d) {
-            final data = d.data();
-            final name = (data['name'] as String?) ?? d.id;
-            return DropdownMenuItem(value: d.id, child: Text(name));
-          }),
-        ];
-        return DropdownButtonFormField<String?>(
-          value: selectedDoctorId,
-          items: items,
-          onChanged: onChanged,
-          decoration: const InputDecoration(
-            labelText: 'Filter by doctor',
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _MetricCard extends StatelessWidget {
-  final String title;
-  final String value;
-
-  const _MetricCard({required this.title, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      constraints: const BoxConstraints(minWidth: 180),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withOpacity(0.6),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActionChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-
-  const _ActionChip({required this.label, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: theme.colorScheme.primary),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusPill extends StatelessWidget {
-  final String label;
-  final bool active;
-
-  const _StatusPill({required this.label, required this.active});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = active ? Colors.green : theme.colorScheme.onSurface.withOpacity(0.4);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Text(
-        label,
-        style: theme.textTheme.bodySmall?.copyWith(
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
-      ),
-    );
-  }
-}
-
-class _BarList extends StatelessWidget {
-  final List<_ReportPoint> points;
-
-  const _BarList({required this.points});
-
-  @override
-  Widget build(BuildContext context) {
-    final maxValue = points.isEmpty ? 1 : points.map((e) => e.value).reduce(max);
-    return Column(
-      children: points.map((p) {
-        final ratio = maxValue == 0 ? 0.0 : p.value / maxValue;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            children: [
-              SizedBox(width: 52, child: Text(p.label)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Container(
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: ratio.clamp(0.05, 1.0),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(width: 32, child: Text('${p.value}')),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-}
-
-class _PieReportChart extends StatelessWidget {
-  final List<_ReportPoint> points;
-
-  const _PieReportChart({required this.points});
-
-  @override
-  Widget build(BuildContext context) {
-    if (points.isEmpty) return const Text('No data yet');
-
-    final palette = [
-      Colors.amber.shade700,
-      Colors.blue.shade600,
-      Colors.green.shade600,
-      Colors.red.shade400,
-    ];
-    final entries = <MapEntry<_ReportPoint, Color>>[];
-    for (var i = 0; i < points.length; i += 1) {
-      entries.add(MapEntry(points[i], palette[i % palette.length]));
-    }
-
-    final nonZero = entries.where((e) => e.key.value > 0).toList();
-    final total = entries.fold<int>(0, (current, entry) => current + entry.key.value);
-    if (nonZero.isEmpty || total == 0) return const Text('No data yet');
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Center(
-          child: SizedBox(
-            width: 180,
-            height: 180,
-            child: CustomPaint(
-              painter: _PieChartPainter(
-                sections: nonZero
-                    .map((entry) => _PieChartSection(
-                          value: entry.key.value.toDouble(),
-                          color: entry.value,
-                        ))
-                    .toList(),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        for (final entry in entries)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: entry.value,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(child: Text(entry.key.label)),
-                Text(
-                  '${entry.key.value} (${((entry.key.value / total) * 100).toStringAsFixed(1)}%)',
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _PieChartSection {
-  final double value;
-  final Color color;
-
-  const _PieChartSection({
-    required this.value,
-    required this.color,
-  });
-}
-
-class _PieChartPainter extends CustomPainter {
-  final List<_PieChartSection> sections;
-
-  const _PieChartPainter({required this.sections});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (sections.isEmpty) return;
-    final total = sections.fold<double>(0, (current, section) => current + section.value);
-    if (total <= 0) return;
-
-    final radius = min(size.width, size.height) / 2;
-    final center = Offset(size.width / 2, size.height / 2);
-    final rect = Rect.fromCircle(center: center, radius: radius);
-    var startAngle = -pi / 2;
-
-    final paint = Paint()..style = PaintingStyle.fill;
-    for (final section in sections) {
-      final sweep = (section.value / total) * 2 * pi;
-      paint.color = section.color;
-      canvas.drawArc(rect, startAngle, sweep, true, paint);
-      startAngle += sweep;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _PieChartPainter oldDelegate) {
-    if (oldDelegate.sections.length != sections.length) return true;
-    for (var i = 0; i < sections.length; i += 1) {
-      if (oldDelegate.sections[i].value != sections[i].value ||
-          oldDelegate.sections[i].color != sections[i].color) {
-        return true;
-      }
-    }
-    return false;
-  }
-}
-
-class _RankList extends StatelessWidget {
-  final List<_ReportPoint> points;
-
-  const _RankList({required this.points});
-
-  @override
-  Widget build(BuildContext context) {
-    if (points.isEmpty) {
-      return const Text('No data yet');
-    }
-    return Column(
-      children: points.map((p) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            children: [
-              Expanded(child: Text(p.label)),
-              Text('${p.value}'),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-}
-
-class _AdminDashboardMetrics {
-  final int totalUsers;
-  final int totalDoctors;
-  final int appointmentsToday;
-  final int completedAppointments;
-  final int activeAppointments;
-  final int pendingApprovals;
-
-  const _AdminDashboardMetrics({
-    required this.totalUsers,
-    required this.totalDoctors,
-    required this.appointmentsToday,
-    required this.completedAppointments,
-    required this.activeAppointments,
-    required this.pendingApprovals,
-  });
-}
-
-class _AdminReportsData {
-  final List<_ReportPoint> appointmentsPerDay;
-  final List<_ReportPoint> mostBookedDoctors;
-  final List<_ReportPoint> bookingStatusBreakdown;
-  final int appointmentsToday;
-  final int bookedSlots;
-  final int totalSlots;
-  final double doctorUtilizationRate;
-  final double cancellationRate;
-  final int activeUsersWeekly;
-  final int pendingNotificationEvents;
-  final int pendingModerationEvents;
-  final int appliedModerationEvents;
-
-  const _AdminReportsData({
-    required this.appointmentsPerDay,
-    required this.mostBookedDoctors,
-    required this.bookingStatusBreakdown,
-    required this.appointmentsToday,
-    required this.bookedSlots,
-    required this.totalSlots,
-    required this.doctorUtilizationRate,
-    required this.cancellationRate,
-    required this.activeUsersWeekly,
-    required this.pendingNotificationEvents,
-    required this.pendingModerationEvents,
-    required this.appliedModerationEvents,
-  });
-}
-
-class _ReportPoint {
-  final String label;
-  final int value;
-
-  const _ReportPoint({required this.label, required this.value});
-}
-
-DateTime _parseDate(dynamic raw) {
-  if (raw is Timestamp) return raw.toDate();
-  if (raw is DateTime) return raw;
-  if (raw is String) return DateTime.tryParse(raw) ?? DateTime.fromMillisecondsSinceEpoch(0);
-  return DateTime.fromMillisecondsSinceEpoch(0);
-}
-
-String _formatDateTime(DateTime dt) {
-  final y = dt.year.toString().padLeft(4, '0');
-  final m = dt.month.toString().padLeft(2, '0');
-  final d = dt.day.toString().padLeft(2, '0');
-  final hh = dt.hour.toString().padLeft(2, '0');
-  final mm = dt.minute.toString().padLeft(2, '0');
-  return '$y-$m-$d $hh:$mm';
-}
-
-String _formatTime(DateTime dt) {
-  final hh = dt.hour.toString().padLeft(2, '0');
-  final mm = dt.minute.toString().padLeft(2, '0');
-  return '$hh:$mm';
-}
-
-String _formatDay(DateTime dt) {
-  return '${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')}';
-}
-
-String _formatRange(DateTimeRange range) {
-  final start = _formatDay(range.start);
-  final end = _formatDay(range.end);
-  return '$start - $end';
-}
-
-String _buildReportFileName() {
-  final now = DateTime.now();
-  final y = now.year.toString().padLeft(4, '0');
-  final m = now.month.toString().padLeft(2, '0');
-  final d = now.day.toString().padLeft(2, '0');
-  return 'admin_report_$y$m$d.pdf';
-}
-
-Future<Uint8List> _buildAdminReportPdf(_AdminReportsData data) async {
-  final doc = pw.Document();
-  final now = DateTime.now();
-  final generatedAt = _formatDateTime(now);
-
-  pw.Widget metricCell(String title, String value) {
-    return pw.Container(
-      width: 250,
-      padding: const pw.EdgeInsets.all(10),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: pdf.PdfColors.grey300),
-        borderRadius: pw.BorderRadius.circular(6),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            title,
-            style: pw.TextStyle(fontSize: 10, color: pdf.PdfColors.grey700),
-          ),
-          pw.SizedBox(height: 6),
-          pw.Text(
-            value,
-            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-          ),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget pointTable(String title, List<_ReportPoint> points) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          title,
-          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
-        ),
-        pw.SizedBox(height: 6),
-        pw.Table(
-          border: pw.TableBorder.all(color: pdf.PdfColors.grey300),
-          columnWidths: const {
-            0: pw.FlexColumnWidth(3),
-            1: pw.FlexColumnWidth(1.2),
-          },
-          children: [
-            pw.TableRow(
-              decoration: pw.BoxDecoration(color: pdf.PdfColors.grey100),
-              children: [
-                pw.Padding(
-                  padding: const pw.EdgeInsets.all(8),
-                  child: pw.Text(
-                    'Label',
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
-                  ),
-                ),
-                pw.Padding(
-                  padding: const pw.EdgeInsets.all(8),
-                  child: pw.Text(
-                    'Value',
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
-                  ),
-                ),
-              ],
-            ),
-            ...points.map((point) {
-              return pw.TableRow(
-                children: [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(8),
-                    child: pw.Text(point.label, style: const pw.TextStyle(fontSize: 10)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(8),
-                    child: pw.Text('${point.value}', style: const pw.TextStyle(fontSize: 10)),
-                  ),
-                ],
-              );
-            }),
-          ],
-        ),
-      ],
-    );
-  }
-
-  doc.addPage(
-    pw.MultiPage(
-      margin: const pw.EdgeInsets.all(24),
-      maxPages: 100,
-      build: (context) {
-        return [
-          pw.Text(
-            'Admin Report',
-            style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
-          ),
-          pw.SizedBox(height: 4),
-          pw.Text(
-            'Generated at: $generatedAt',
-            style: pw.TextStyle(fontSize: 10, color: pdf.PdfColors.grey700),
-          ),
-          pw.SizedBox(height: 14),
-          pw.Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              metricCell('Appointments today', '${data.appointmentsToday}'),
-              metricCell('Active users (7d)', '${data.activeUsersWeekly}'),
-              metricCell('Cancellation rate', '${(data.cancellationRate * 100).toStringAsFixed(1)}%'),
-              metricCell('Utilization (30d)', '${(data.doctorUtilizationRate * 100).toStringAsFixed(1)}%'),
-              metricCell('Booked slots (30d)', '${data.bookedSlots}'),
-              metricCell('Total slots (30d)', '${data.totalSlots}'),
-            ],
-          ),
-          pw.SizedBox(height: 16),
-          pointTable('Booking status breakdown (30 days)', data.bookingStatusBreakdown),
-          pw.SizedBox(height: 12),
-          pointTable('Appointments per day (7 days)', data.appointmentsPerDay),
-          pw.SizedBox(height: 12),
-          pointTable('Most booked doctors', data.mostBookedDoctors),
-        ];
-      },
-    ),
-  );
-
-  return doc.save();
-}
-
-Future<Map<String, String>> _prefetchDoctorNames(List<String> ids) async {
-  if (ids.isEmpty) return {};
-  final firestore = FirebaseFirestore.instance;
-  final result = <String, String>{};
-  const chunk = 10;
-  for (var i = 0; i < ids.length; i += chunk) {
-    final slice = ids.sublist(i, min(i + chunk, ids.length));
-    final q = await firestore.collection('doctors').where(FieldPath.documentId, whereIn: slice).get();
-    for (var d in q.docs) {
-      final data = d.data();
-      result[d.id] = (data['name'] as String?) ?? d.id;
-    }
-  }
-  return result;
-}

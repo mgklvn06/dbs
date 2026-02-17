@@ -80,6 +80,15 @@ class _LoginPageState extends State<LoginPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () =>
+                  Navigator.pushReplacementNamed(context, Routes.landing),
+              icon: const Icon(Icons.arrow_back_outlined, size: 18),
+              label: const Text('Back to browse'),
+            ),
+          ),
           Reveal(
             delay: const Duration(milliseconds: 50),
             child: Column(
@@ -94,7 +103,10 @@ class _LoginPageState extends State<LoginPage> {
                         color: theme.colorScheme.primary,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: const Icon(Icons.local_hospital_rounded, color: Colors.white),
+                      child: const Icon(
+                        Icons.local_hospital_rounded,
+                        color: Colors.white,
+                      ),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -103,13 +115,17 @@ class _LoginPageState extends State<LoginPage> {
                         children: [
                           Text(
                             'AstraCare',
-                            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'Smart bookings, real care.',
                             style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurface.withOpacity(0.6),
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.6,
+                              ),
                             ),
                           ),
                         ],
@@ -120,16 +136,46 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 18),
                 Text(
                   'Welcome back',
-                  style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   'Sign in to manage your appointments',
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Reveal(
+            delay: const Duration(milliseconds: 95),
+            child: AppCard(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.local_hospital_outlined,
+                    color: theme.colorScheme.error,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'For urgent medical emergencies, contact local emergency services directly. AstraCare is not an emergency-response platform.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.8,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 22),
@@ -139,6 +185,22 @@ class _LoginPageState extends State<LoginPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Text(
+                    'Secure sign in',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Use your account credentials to continue to your dashboard.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.65,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   TextField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -165,11 +227,15 @@ class _LoginPageState extends State<LoginPage> {
                       final adminAttempt = isAdminEmail(email);
 
                       try {
-                        final policy = await SystemSettingsPolicy.load(FirebaseFirestore.instance);
+                        final policy = await SystemSettingsPolicy.load(
+                          FirebaseFirestore.instance,
+                        );
                         if (!policy.canSignIn(isAdmin: adminAttempt)) {
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(policy.maintenanceBlockedMessage())),
+                            SnackBar(
+                              content: Text(policy.maintenanceBlockedMessage()),
+                            ),
                           );
                           return;
                         }
@@ -178,13 +244,17 @@ class _LoginPageState extends State<LoginPage> {
                       }
 
                       context.read<AuthBloc>().add(
-                            LoginRequested(
-                              email,
-                              password,
-                            ),
-                          );
+                        LoginRequested(email, password),
+                      );
                     },
                     child: const Text('Sign In'),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'By signing in, you agree to continue under our privacy and security policies.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Row(
@@ -214,7 +284,7 @@ class _LoginPageState extends State<LoginPage> {
                   onPressed: () {
                     Navigator.pushNamed(context, Routes.register);
                   },
-                  child: const Text('Register'),
+                  child: const Text('Create account'),
                 ),
               ],
             ),
@@ -232,9 +302,7 @@ class _LoadingOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: Colors.black26,
-      child: const Center(
-        child: CircularProgressIndicator(),
-      ),
+      child: const Center(child: CircularProgressIndicator()),
     );
   }
 }

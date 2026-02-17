@@ -61,8 +61,14 @@ class AuthGuard extends StatelessWidget {
                 final role = data?['role'] as String?;
                 final hasAdminFlag = data?['isAdmin'] == true;
                 final isAdminAccount = isEmailAdmin || hasAdminFlag || role == 'admin';
+                final accountStatus = (data?['status'] as String?)?.toLowerCase() ?? 'active';
+                final suspendedReason = (data?['suspendedReason'] as String?) ?? '';
                 final acceptedTermsVersion = _readInt(data?['acceptedTermsVersion'], 0);
                 final lastSignInAt = _readDateTime(user.metadata.lastSignInTime);
+
+                if (!isAdminAccount && accountStatus == 'suspended') {
+                  return _SuspendedAccountGate(reason: suspendedReason);
+                }
 
                 if (policy.shouldForceLogoutSession(
                   isAdmin: isAdminAccount,
@@ -204,6 +210,55 @@ class _TermsAcceptanceGateState extends State<_TermsAcceptanceGate> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Text('Accept and Continue'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SuspendedAccountGate extends StatelessWidget {
+  final String reason;
+
+  const _SuspendedAccountGate({required this.reason});
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = reason.trim().isEmpty ? 'Please contact support to reactivate your account.' : reason.trim();
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Account Suspended'),
+        automaticallyImplyLeading: false,
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+            },
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Your account is currently suspended.',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  detail,
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),

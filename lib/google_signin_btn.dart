@@ -172,7 +172,16 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
           'prompt': 'select_account',
         });
 
-        userCredential = await FirebaseAuth.instance.signInWithPopup(googleProvider);
+        try {
+          userCredential = await FirebaseAuth.instance.signInWithPopup(googleProvider);
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'popup-blocked' || e.code == 'web-storage-unsupported') {
+            await FirebaseAuth.instance.signInWithRedirect(googleProvider);
+            if (mounted) setState(() => _isLoading = false);
+            return;
+          }
+          rethrow;
+        }
       } else {
         // For mobile platforms, use the google_sign_in plugin
         GoogleSignInAccount? account = await _googleSignIn.signInSilently();
@@ -244,14 +253,19 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
               'Check Firebase/GCP OAuth configuration, browser popups/cookies (web), and SHA keys (Android).',
         );
       } else {
+        final raw = e.toString();
+        final looksLikeFedCmIssue =
+            kIsWeb && (raw.contains('FedCM') || raw.contains('unknown_reason') || raw.contains('NetworkError'));
         // Generic exception
         // ignore: avoid_print
         print('Google Sign-In failed: $e\n$st');
         // ignore: use_build_context_synchronously
         _showErrorDialog(
-          title: 'Sign-In failed',
-          message: e.toString(),
-          suggestion: 'Try again or check logs for details.',
+          title: looksLikeFedCmIssue ? 'Google token request failed' : 'Sign-In failed',
+          message: raw,
+          suggestion: looksLikeFedCmIssue
+              ? 'Check Firebase Auth authorized domain, Google OAuth web client, browser third-party cookie settings, and popup blockers.'
+              : 'Try again or check logs for details.',
         );
       }
     }
@@ -337,7 +351,7 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
             ),
           ),
         const SizedBox(height: 8),
-        if (kDebugMode) _buildDebugInfo(),
+        if (kDebugMode && !kIsWeb) _buildDebugInfo(),
       ],
     );
   }
@@ -354,15 +368,7 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
         ),
         ListTile(
           title: const Text('GoogleSignIn account (current)'),
-          subtitle: FutureBuilder<GoogleSignInAccount?>(
-            future: _googleSignIn.signInSilently(),
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) return const Text('loading...');
-              if (!snap.hasData || snap.data == null) return const Text('null');
-              final a = snap.data!;
-              return Text('${a.id}\n${a.email}\n${a.displayName}');
-            },
-          ),
+          subtitle: const Text('Debug account lookup disabled to avoid implicit silent sign-in calls.'),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -381,7 +387,6 @@ class _GoogleSignInWebButtonState extends State<GoogleSignInWebButton> {
                 onPressed: () async {
                   // Refresh debug info
                   await _googleSignIn.signOut();
-                  await _googleSignIn.signInSilently();
                   setState(() {});
                 },
                 child: const Text('Refresh'),

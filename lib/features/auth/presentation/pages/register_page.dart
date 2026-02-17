@@ -13,6 +13,7 @@ import 'package:dbs/core/widgets/reveal.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
+import 'package:dbs/core/utils/firebase_error_mapper.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -40,9 +41,10 @@ class _RegisterPageState extends State<RegisterPage> {
           child: BlocConsumer<AuthBloc, AuthState>(
             listener: (context, state) {
               if (state is AuthError) {
+                final friendly = mapFirebaseAuthError(state.message);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(state.message),
+                    content: Text('Registration failed: $friendly'),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
@@ -77,6 +79,15 @@ class _RegisterPageState extends State<RegisterPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () =>
+                  Navigator.pushReplacementNamed(context, Routes.landing),
+              icon: const Icon(Icons.arrow_back_outlined, size: 18),
+              label: const Text('Back to browse'),
+            ),
+          ),
           Reveal(
             delay: const Duration(milliseconds: 50),
             child: Column(
@@ -91,7 +102,10 @@ class _RegisterPageState extends State<RegisterPage> {
                         color: theme.colorScheme.secondary,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: const Icon(Icons.person_add_alt_1_rounded, color: Colors.white),
+                      child: const Icon(
+                        Icons.person_add_alt_1_rounded,
+                        color: Colors.white,
+                      ),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -99,14 +113,18 @@ class _RegisterPageState extends State<RegisterPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Create your account',
-                            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                            'AstraCare account setup',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Book appointments faster and easier',
+                            'Set up secure access for appointments and care updates.',
                             style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurface.withOpacity(0.6),
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.6,
+                              ),
                             ),
                           ),
                         ],
@@ -117,9 +135,46 @@ class _RegisterPageState extends State<RegisterPage> {
                 const SizedBox(height: 18),
                 Text(
                   'Join AstraCare',
-                  style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Create your account to continue with online booking.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Reveal(
+            delay: const Duration(milliseconds: 95),
+            child: AppCard(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.local_hospital_outlined,
+                    color: theme.colorScheme.error,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'For urgent medical emergencies, contact local emergency services directly. AstraCare is not an emergency-response platform.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.8,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 22),
@@ -129,6 +184,22 @@ class _RegisterPageState extends State<RegisterPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Text(
+                    'Create a secure account',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Use a valid email address. You can complete your full profile after sign-up.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.65,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   TextField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -144,6 +215,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     obscureText: true,
                     decoration: const InputDecoration(
                       labelText: 'Password',
+                      helperText: 'Use at least 8 characters.',
                       prefixIcon: Icon(Icons.lock_outline),
                     ),
                   ),
@@ -155,11 +227,17 @@ class _RegisterPageState extends State<RegisterPage> {
                       final adminAttempt = isAdminEmail(email);
 
                       try {
-                        final policy = await SystemSettingsPolicy.load(FirebaseFirestore.instance);
+                        final policy = await SystemSettingsPolicy.load(
+                          FirebaseFirestore.instance,
+                        );
                         if (!policy.canRegisterPatient(isAdmin: adminAttempt)) {
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(policy.patientRegistrationBlockedMessage())),
+                            SnackBar(
+                              content: Text(
+                                policy.patientRegistrationBlockedMessage(),
+                              ),
+                            ),
                           );
                           return;
                         }
@@ -168,13 +246,17 @@ class _RegisterPageState extends State<RegisterPage> {
                       }
 
                       context.read<AuthBloc>().add(
-                            RegisterRequested(
-                              email,
-                              password,
-                            ),
-                          );
+                        RegisterRequested(email, password),
+                      );
                     },
                     child: const Text('Create Account'),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'By creating an account, you agree to our privacy and security policies.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
                   ),
                 ],
               ),
@@ -209,9 +291,7 @@ class _LoadingOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: Colors.black26,
-      child: const Center(
-        child: CircularProgressIndicator(),
-      ),
+      child: const Center(child: CircularProgressIndicator()),
     );
   }
 }

@@ -4,26 +4,22 @@ import 'package:dbs/core/settings/system_settings_policy.dart';
 
 enum AppointmentActorRole { patient, doctor, admin, system }
 
-enum ModerationReviewOutcome {
-  applied,
-  dismissed,
-  skipped,
-  notFound,
-}
+enum ModerationReviewOutcome { applied, dismissed, skipped, notFound }
 
 class AppointmentPolicyService {
   final FirebaseFirestore firestore;
 
   AppointmentPolicyService({FirebaseFirestore? firestore})
-      : firestore = firestore ?? FirebaseFirestore.instance;
+    : firestore = firestore ?? FirebaseFirestore.instance;
 
-  Future<void> onAppointmentCreated({
-    required String appointmentId,
-  }) async {
+  Future<void> onAppointmentCreated({required String appointmentId}) async {
     final policy = await SystemSettingsPolicy.load(firestore);
     if (!policy.emailNotificationsEnabled) return;
 
-    final apptSnap = await firestore.collection('appointments').doc(appointmentId).get();
+    final apptSnap = await firestore
+        .collection('appointments')
+        .doc(appointmentId)
+        .get();
     if (!apptSnap.exists) return;
     final appt = apptSnap.data() ?? <String, dynamic>{};
 
@@ -43,7 +39,10 @@ class AppointmentPolicyService {
     required AppointmentActorRole actorRole,
   }) async {
     final policy = await SystemSettingsPolicy.load(firestore);
-    final apptSnap = await firestore.collection('appointments').doc(appointmentId).get();
+    final apptSnap = await firestore
+        .collection('appointments')
+        .doc(appointmentId)
+        .get();
     if (!apptSnap.exists) return;
     final appt = apptSnap.data() ?? <String, dynamic>{};
 
@@ -72,8 +71,11 @@ class AppointmentPolicyService {
 
     var applied = 0;
     for (final doc in eventsSnap.docs) {
-      final data = doc.data();
-      final appliedToTarget = await _applyModerationEventData(policy: policy, eventData: data);
+      final data = {...doc.data(), 'eventId': doc.id};
+      final appliedToTarget = await _applyModerationEventData(
+        policy: policy,
+        eventData: data,
+      );
 
       await doc.reference.set({
         'status': appliedToTarget ? 'applied' : 'skipped',
@@ -88,15 +90,18 @@ class AppointmentPolicyService {
     required String eventId,
     required bool approve,
     String? reviewedByAdminId,
+    String? reviewReason,
   }) async {
     final eventRef = firestore.collection('moderation_events').doc(eventId);
     final eventSnap = await eventRef.get();
     if (!eventSnap.exists) return ModerationReviewOutcome.notFound;
 
     if (!approve) {
+      final reason = reviewReason?.trim();
       await eventRef.set({
         'status': 'dismissed',
         'reviewDecision': 'dismiss',
+        if (reason != null && reason.isNotEmpty) 'reviewReason': reason,
         'reviewedByAdminId': reviewedByAdminId,
         'processedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -106,7 +111,10 @@ class AppointmentPolicyService {
     final policy = await SystemSettingsPolicy.load(firestore);
     final applied = await _applyModerationEventData(
       policy: policy,
-      eventData: eventSnap.data() ?? <String, dynamic>{},
+      eventData: {
+        ...(eventSnap.data() ?? <String, dynamic>{}),
+        'eventId': eventSnap.id,
+      },
     );
     await eventRef.set({
       'status': applied ? 'applied' : 'skipped',
@@ -114,7 +122,9 @@ class AppointmentPolicyService {
       'reviewedByAdminId': reviewedByAdminId,
       'processedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
-    return applied ? ModerationReviewOutcome.applied : ModerationReviewOutcome.skipped;
+    return applied
+        ? ModerationReviewOutcome.applied
+        : ModerationReviewOutcome.skipped;
   }
 
   Future<void> _handleModeration({
@@ -141,7 +151,11 @@ class AppointmentPolicyService {
       );
       if (noShows >= policy.autoSuspendAfterPatientNoShows) {
         if (isAdminActor) {
-          await _suspendPatient(patientId, noShows, policy.autoSuspendAfterPatientNoShows);
+          await _suspendPatient(
+            patientId,
+            noShows,
+            policy.autoSuspendAfterPatientNoShows,
+          );
         } else {
           await _queueModerationEvent(
             kind: 'patient_no_show_threshold_reached',
@@ -165,7 +179,11 @@ class AppointmentPolicyService {
       );
       if (cancellations >= policy.autoSuspendAfterDoctorCancellations) {
         if (isAdminActor) {
-          await _suspendDoctor(doctorId, cancellations, policy.autoSuspendAfterDoctorCancellations);
+          await _suspendDoctor(
+            doctorId,
+            cancellations,
+            policy.autoSuspendAfterDoctorCancellations,
+          );
         } else {
           await _queueModerationEvent(
             kind: 'doctor_cancellation_threshold_reached',
@@ -189,7 +207,8 @@ class AppointmentPolicyService {
     if (!policy.emailNotificationsEnabled) return;
 
     final normalizedStatus = newStatus.trim().toLowerCase();
-    if (normalizedStatus == 'cancelled' && !policy.cancellationNotificationsEnabled) {
+    if (normalizedStatus == 'cancelled' &&
+        !policy.cancellationNotificationsEnabled) {
       return;
     }
 
@@ -279,6 +298,7 @@ class AppointmentPolicyService {
   }) async {
     final kind = (eventData['kind'] as String?) ?? '';
     final targetId = (eventData['targetId'] as String?) ?? '';
+    final eventId = (eventData['eventId'] as String?) ?? '';
     final eventThreshold = _readInt(eventData['threshold'], 0);
 
     if (kind == 'patient_no_show_threshold_reached' &&
@@ -289,7 +309,9 @@ class AppointmentPolicyService {
         id: targetId,
         status: 'no_show',
       );
-      final threshold = eventThreshold > 0 ? eventThreshold : policy.autoSuspendAfterPatientNoShows;
+      final threshold = eventThreshold > 0
+          ? eventThreshold
+          : policy.autoSuspendAfterPatientNoShows;
       if (count >= threshold) {
         await _suspendPatient(targetId, count, threshold);
         return true;
@@ -306,7 +328,9 @@ class AppointmentPolicyService {
         status: 'cancelled',
         updatedByRole: 'doctor',
       );
-      final threshold = eventThreshold > 0 ? eventThreshold : policy.autoSuspendAfterDoctorCancellations;
+      final threshold = eventThreshold > 0
+          ? eventThreshold
+          : policy.autoSuspendAfterDoctorCancellations;
       if (count >= threshold) {
         await _suspendDoctor(targetId, count, threshold);
         return true;
@@ -314,7 +338,77 @@ class AppointmentPolicyService {
       return false;
     }
 
+    if (kind == 'doctor_account_deletion_request' && targetId.isNotEmpty) {
+      final blocked = await _hasDoctorDeletionBlockers(
+        targetId,
+        currentEventId: eventId,
+      );
+      if (blocked) return false;
+      await _approveDoctorDeletionRequest(targetId);
+      return true;
+    }
+
     return false;
+  }
+
+  Future<bool> _hasDoctorDeletionBlockers(
+    String doctorId, {
+    String? currentEventId,
+  }) async {
+    final now = DateTime.now();
+    final appointments = await firestore
+        .collection('appointments')
+        .where('doctorId', isEqualTo: doctorId)
+        .get();
+
+    final hasUpcomingActiveAppointment = appointments.docs.any((doc) {
+      final data = doc.data();
+      final status = (data['status'] as String?) ?? 'pending';
+      final isActive =
+          status == 'pending' || status == 'confirmed' || status == 'accepted';
+      if (!isActive) return false;
+
+      final rawDate = data['appointmentTime'] ?? data['dateTime'];
+      DateTime? appointmentDate;
+      if (rawDate is Timestamp) {
+        appointmentDate = rawDate.toDate();
+      } else if (rawDate is DateTime) {
+        appointmentDate = rawDate;
+      } else if (rawDate is String) {
+        appointmentDate = DateTime.tryParse(rawDate);
+      }
+      if (appointmentDate == null) return true;
+      return appointmentDate.isAfter(now);
+    });
+    if (hasUpcomingActiveAppointment) return true;
+
+    final moderation = await firestore
+        .collection('moderation_events')
+        .where('doctorId', isEqualTo: doctorId)
+        .where('status', isEqualTo: 'pending_review')
+        .get();
+
+    return moderation.docs.any((doc) => doc.id != currentEventId);
+  }
+
+  Future<void> _approveDoctorDeletionRequest(String doctorId) async {
+    final now = FieldValue.serverTimestamp();
+    await firestore.collection('users').doc(doctorId).set({
+      'accountStatus': 'deletion_approved',
+      'status': 'suspended',
+      'suspendedReason': 'Account deletion approved by admin.',
+      'deletionApprovedAt': now,
+      'updatedAt': now,
+    }, SetOptions(merge: true));
+
+    await firestore.collection('doctors').doc(doctorId).set({
+      'accountStatus': 'deletion_approved',
+      'isActive': false,
+      'acceptingBookings': false,
+      'profileVisible': false,
+      'deletionApprovedAt': now,
+      'updatedAt': now,
+    }, SetOptions(merge: true));
   }
 
   int _readInt(dynamic raw, int fallback) {
@@ -328,7 +422,8 @@ class AppointmentPolicyService {
     final now = FieldValue.serverTimestamp();
     await firestore.collection('users').doc(userId).set({
       'status': 'suspended',
-      'suspendedReason': 'Auto-suspended after $count no-shows (threshold: $threshold).',
+      'suspendedReason':
+          'Auto-suspended after $count no-shows (threshold: $threshold).',
       'suspendedAt': now,
       'updatedAt': now,
     }, SetOptions(merge: true));
@@ -339,7 +434,8 @@ class AppointmentPolicyService {
     await firestore.collection('doctors').doc(doctorId).set({
       'isActive': false,
       'status': 'suspended',
-      'suspendedReason': 'Auto-suspended after $count cancellations (threshold: $threshold).',
+      'suspendedReason':
+          'Auto-suspended after $count cancellations (threshold: $threshold).',
       'suspendedAt': now,
       'updatedAt': now,
     }, SetOptions(merge: true));

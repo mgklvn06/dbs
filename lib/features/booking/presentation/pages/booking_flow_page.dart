@@ -39,8 +39,11 @@ class _BookingFlowPageState extends State<BookingFlowPage> {
         final settings = settingsSnap.data?.data() ?? {};
         final maintenance = _readMap(settings['maintenance']);
         final booking = _readMap(settings['booking']);
-        final maintenanceMode = (maintenance['enabled'] as bool?) ?? (settings['maintenanceMode'] as bool?) ?? false;
-        final bookingEnabled = (booking['enabled'] as bool?) ?? true;
+        final maintenanceMode = _readBool(
+          maintenance['enabled'],
+          _readBool(settings['maintenanceMode'], false),
+        );
+        final bookingEnabled = _readBool(booking['enabled'], true);
         final bookingDisabled = maintenanceMode || !bookingEnabled;
         final maintenanceMessage = (maintenance['message'] as String?)?.trim();
         final disabledMessage = (maintenanceMessage != null && maintenanceMessage.isNotEmpty)
@@ -150,6 +153,17 @@ Map<String, dynamic> _readMap(dynamic raw) {
     return raw.map((key, value) => MapEntry('$key', value));
   }
   return <String, dynamic>{};
+}
+
+bool _readBool(dynamic raw, bool fallback) {
+  if (raw is bool) return raw;
+  if (raw is num) return raw != 0;
+  if (raw is String) {
+    final normalized = raw.trim().toLowerCase();
+    if (normalized == 'true' || normalized == '1' || normalized == 'yes') return true;
+    if (normalized == 'false' || normalized == '0' || normalized == 'no') return false;
+  }
+  return fallback;
 }
 
 class _DoctorCard extends StatelessWidget {

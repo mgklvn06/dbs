@@ -12,42 +12,44 @@ abstract class BookingRemoteDataSource {
 
 class BookingRemoteDataSourceImpl implements BookingRemoteDataSource {
   final FirebaseFirestore firestore;
-  static const Set<String> _nonBlockingStatuses = {'cancelled', 'rejected'};
+  static const Set<String> _nonBlockingStatuses = {
+    'cancelled',
+    'rejected',
+    'completed',
+    'no_show',
+  };
   final AppointmentPolicyService _policyService;
 
   BookingRemoteDataSourceImpl({FirebaseFirestore? firestore})
-      : firestore = firestore ?? FirebaseFirestore.instance,
-        _policyService = AppointmentPolicyService(firestore: firestore ?? FirebaseFirestore.instance);
+    : firestore = firestore ?? FirebaseFirestore.instance,
+      _policyService = AppointmentPolicyService(
+        firestore: firestore ?? FirebaseFirestore.instance,
+      );
 
   Future<_BookingPolicy> _loadPolicy() async {
-    final settingsSnap = await firestore.collection('settings').doc('system').get();
+    final settingsSnap = await firestore
+        .collection('settings')
+        .doc('system')
+        .get();
     final settings = settingsSnap.data() ?? <String, dynamic>{};
 
-    Map<String, dynamic> readMap(dynamic raw) {
-      if (raw is Map<String, dynamic>) return raw;
-      if (raw is Map) {
-        return raw.map((k, v) => MapEntry('$k', v));
-      }
-      return <String, dynamic>{};
-    }
-
-    int readInt(dynamic raw, int fallback) {
-      if (raw is int) return raw;
-      if (raw is num) return raw.toInt();
-      if (raw is String) return int.tryParse(raw) ?? fallback;
-      return fallback;
-    }
-
-    final maintenance = readMap(settings['maintenance']);
-    final booking = readMap(settings['booking']);
-    final maintenanceEnabled = (maintenance['enabled'] as bool?) ?? (settings['maintenanceMode'] as bool?) ?? false;
-    final bookingEnabled = (booking['enabled'] as bool?) ?? true;
-    final autoConfirm = (booking['autoConfirm'] as bool?) ?? false;
-    final minNoticeHours = readInt(booking['minNoticeHours'], 2);
-    final maxPatientPerDay = readInt(booking['maxBookingsPerPatientPerDay'], 2);
-    final maxDoctorPerDay = readInt(booking['maxBookingsPerDoctorPerDay'], 15);
+    final maintenance = _readMap(settings['maintenance']);
+    final booking = _readMap(settings['booking']);
+    final maintenanceEnabled = _readBool(
+      maintenance['enabled'],
+      _readBool(settings['maintenanceMode'], false),
+    );
+    final bookingEnabled = _readBool(booking['enabled'], true);
+    final autoConfirm = _readBool(booking['autoConfirm'], false);
+    final minNoticeHours = booking.containsKey('minNoticeHours')
+        ? _readInt(booking['minNoticeHours'], 0)
+        : 0;
+    final maxPatientPerDay = booking.containsKey('maxBookingsPerPatientPerDay')
+        ? _readInt(booking['maxBookingsPerPatientPerDay'], 0)
+        : 0;
     final maintenanceMessage =
-        (maintenance['message'] as String?) ?? 'System is under maintenance. Please try again later.';
+        (maintenance['message'] as String?) ??
+        'System is under maintenance. Please try again later.';
     final bookingDisabledMessage = maintenanceEnabled
         ? maintenanceMessage
         : 'Booking is currently disabled by the admin.';
@@ -58,12 +60,72 @@ class BookingRemoteDataSourceImpl implements BookingRemoteDataSource {
       autoConfirm: autoConfirm,
       minNoticeHours: minNoticeHours < 0 ? 0 : minNoticeHours,
       maxBookingsPerPatientPerDay: maxPatientPerDay < 0 ? 0 : maxPatientPerDay,
-      maxBookingsPerDoctorPerDay: maxDoctorPerDay < 0 ? 0 : maxDoctorPerDay,
     );
   }
 
-  CollectionReference<AppointmentModel> get _col => firestore.collection('appointments').withConverter<AppointmentModel>(
-        fromFirestore: (snap, _) => AppointmentModel.fromMap(snapshotMapToMap(snap.data())),
+  Future<_DoctorBookingPolicy> _loadDoctorPolicy(String doctorId) async {
+    final snap = await firestore.collection('doctors').doc(doctorId).get();
+    if (!snap.exists) {
+      return const _DoctorBookingPolicy(
+        doctorExists: false,
+        isActive: false,
+        profileVisible: false,
+        acceptingBookings: false,
+        dailyBookingCap: 0,
+        autoConfirmBookings: false,
+      );
+    }
+
+    final data = snap.data() ?? <String, dynamic>{};
+    final bookingPreferences = _readMap(data['bookingPreferences']);
+    return _DoctorBookingPolicy(
+      doctorExists: true,
+      isActive: _readBool(data['isActive'], true),
+      profileVisible: _readBool(data['profileVisible'], true),
+      acceptingBookings: _readBool(data['acceptingBookings'], true),
+      dailyBookingCap: _readInt(bookingPreferences['dailyBookingCap'], 0),
+      autoConfirmBookings: _readBool(
+        bookingPreferences['autoConfirmBookings'],
+        false,
+      ),
+    );
+  }
+
+  Map<String, dynamic> _readMap(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      return raw.map((k, v) => MapEntry('$k', v));
+    }
+    return <String, dynamic>{};
+  }
+
+  int _readInt(dynamic raw, int fallback) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw) ?? fallback;
+    return fallback;
+  }
+
+  bool _readBool(dynamic raw, bool fallback) {
+    if (raw is bool) return raw;
+    if (raw is num) return raw != 0;
+    if (raw is String) {
+      final normalized = raw.trim().toLowerCase();
+      if (normalized == 'true' || normalized == '1' || normalized == 'yes') {
+        return true;
+      }
+      if (normalized == 'false' || normalized == '0' || normalized == 'no') {
+        return false;
+      }
+    }
+    return fallback;
+  }
+
+  CollectionReference<AppointmentModel> get _col => firestore
+      .collection('appointments')
+      .withConverter<AppointmentModel>(
+        fromFirestore: (snap, _) =>
+            AppointmentModel.fromMap(snapshotMapToMap(snap.data())),
         toFirestore: (AppointmentModel model, _) => model.toMap(),
       );
 
@@ -73,16 +135,31 @@ class BookingRemoteDataSourceImpl implements BookingRemoteDataSource {
   }
 
   @override
-  Future<AppointmentModel> createAppointment(AppointmentModel appointment) async {
+  Future<AppointmentModel> createAppointment(
+    AppointmentModel appointment,
+  ) async {
     final policy = await _loadPolicy();
     if (!policy.bookingEnabled) {
       throw Exception(policy.bookingDisabledMessage);
+    }
+    final doctorPolicy = await _loadDoctorPolicy(appointment.doctorId);
+    if (!doctorPolicy.doctorExists ||
+        !doctorPolicy.isActive ||
+        !doctorPolicy.profileVisible) {
+      throw Exception('Doctor is not available for booking right now.');
+    }
+    if (!doctorPolicy.acceptingBookings) {
+      throw Exception(
+        'Doctor has paused new bookings. Please try another doctor.',
+      );
     }
 
     final now = DateTime.now();
     final minBookTime = now.add(Duration(hours: policy.minNoticeHours));
     if (appointment.dateTime.isBefore(minBookTime)) {
-      throw Exception('Booking requires at least ${policy.minNoticeHours} hour(s) notice.');
+      throw Exception(
+        'Booking requires at least ${policy.minNoticeHours} hour(s) notice.',
+      );
     }
 
     final dayStart = DateTime(
@@ -106,21 +183,16 @@ class BookingRemoteDataSourceImpl implements BookingRemoteDataSource {
       }
     }
 
-    if (policy.maxBookingsPerDoctorPerDay > 0) {
-      final doctorCount = await _countBookingsForDay(
-        field: 'doctorId',
-        id: appointment.doctorId,
-        dayStart: dayStart,
-        dayEnd: dayEnd,
-      );
-      if (doctorCount >= policy.maxBookingsPerDoctorPerDay) {
-        throw Exception('Doctor is fully booked for this day. Please choose another time.');
-      }
-    }
+    // NOTE:
+    // Doctor-wide daily cap is not enforced here because patients cannot read
+    // all appointments for a doctor under secure client-side rules.
 
     final appointments = firestore.collection('appointments');
     final slotId = appointment.slotId;
-    final createdStatus = policy.autoConfirm ? 'confirmed' : 'pending';
+    final createdStatus =
+        (policy.autoConfirm || doctorPolicy.autoConfirmBookings)
+        ? 'confirmed'
+        : 'pending';
 
     final created = await firestore.runTransaction((tx) async {
       if (slotId != null) {
@@ -181,19 +253,34 @@ class BookingRemoteDataSourceImpl implements BookingRemoteDataSource {
     final snapshot = await firestore
         .collection('appointments')
         .where(field, isEqualTo: id)
-        .where('appointmentTime', isGreaterThanOrEqualTo: Timestamp.fromDate(dayStart))
-        .where('appointmentTime', isLessThan: Timestamp.fromDate(dayEnd))
         .get();
 
     return snapshot.docs.where((doc) {
-      final status = (doc.data()['status'] as String?)?.toLowerCase() ?? 'pending';
-      return !_nonBlockingStatuses.contains(status);
+      final data = doc.data();
+      final status = (data['status'] as String?)?.toLowerCase() ?? 'pending';
+      if (_nonBlockingStatuses.contains(status)) return false;
+
+      final rawDate = data['appointmentTime'] ?? data['dateTime'];
+      DateTime? appointmentDate;
+      if (rawDate is Timestamp) {
+        appointmentDate = rawDate.toDate();
+      } else if (rawDate is DateTime) {
+        appointmentDate = rawDate;
+      } else if (rawDate is String) {
+        appointmentDate = DateTime.tryParse(rawDate);
+      }
+      if (appointmentDate == null) return false;
+
+      return !appointmentDate.isBefore(dayStart) && appointmentDate.isBefore(dayEnd);
     }).length;
   }
 
   @override
   Future<List<AppointmentModel>> getAppointmentsForUser(String userId) async {
-    final q = await _col.where('userId', isEqualTo: userId).orderBy('appointmentTime', descending: true).get();
+    final q = await _col
+        .where('userId', isEqualTo: userId)
+        .orderBy('appointmentTime', descending: true)
+        .get();
     return q.docs.map((d) {
       final model = d.data();
       return AppointmentModel.fromMap({...model.toMap(), 'id': d.id});
@@ -201,8 +288,13 @@ class BookingRemoteDataSourceImpl implements BookingRemoteDataSource {
   }
 
   @override
-  Future<List<AppointmentModel>> getAppointmentsForDoctor(String doctorId) async {
-    final q = await _col.where('doctorId', isEqualTo: doctorId).orderBy('appointmentTime', descending: true).get();
+  Future<List<AppointmentModel>> getAppointmentsForDoctor(
+    String doctorId,
+  ) async {
+    final q = await _col
+        .where('doctorId', isEqualTo: doctorId)
+        .orderBy('appointmentTime', descending: true)
+        .get();
     return q.docs.map((d) {
       final model = d.data();
       return AppointmentModel.fromMap({...model.toMap(), 'id': d.id});
@@ -219,7 +311,10 @@ class BookingRemoteDataSourceImpl implements BookingRemoteDataSource {
   }
 
   @override
-  Future<void> updateAppointmentStatus(String appointmentId, String status) async {
+  Future<void> updateAppointmentStatus(
+    String appointmentId,
+    String status,
+  ) async {
     await firestore.collection('appointments').doc(appointmentId).update({
       'status': status,
       'statusUpdatedByRole': 'system',
@@ -243,7 +338,6 @@ class _BookingPolicy {
   final bool autoConfirm;
   final int minNoticeHours;
   final int maxBookingsPerPatientPerDay;
-  final int maxBookingsPerDoctorPerDay;
 
   const _BookingPolicy({
     required this.bookingEnabled,
@@ -251,6 +345,23 @@ class _BookingPolicy {
     required this.autoConfirm,
     required this.minNoticeHours,
     required this.maxBookingsPerPatientPerDay,
-    required this.maxBookingsPerDoctorPerDay,
+  });
+}
+
+class _DoctorBookingPolicy {
+  final bool doctorExists;
+  final bool isActive;
+  final bool profileVisible;
+  final bool acceptingBookings;
+  final int dailyBookingCap;
+  final bool autoConfirmBookings;
+
+  const _DoctorBookingPolicy({
+    required this.doctorExists,
+    required this.isActive,
+    required this.profileVisible,
+    required this.acceptingBookings,
+    required this.dailyBookingCap,
+    required this.autoConfirmBookings,
   });
 }

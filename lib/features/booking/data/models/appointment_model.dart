@@ -17,7 +17,8 @@ class AppointmentModel extends AppointmentEntity {
     if (rawDate is Timestamp) {
       parsedDate = rawDate.toDate();
     } else if (rawDate is String) {
-      parsedDate = DateTime.tryParse(rawDate) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      parsedDate =
+          DateTime.tryParse(rawDate) ?? DateTime.fromMillisecondsSinceEpoch(0);
     } else if (rawDate is DateTime) {
       parsedDate = rawDate;
     } else {
@@ -34,11 +35,13 @@ class AppointmentModel extends AppointmentEntity {
   }
 
   Map<String, dynamic> toMap() {
+    final appointmentTimestamp = Timestamp.fromDate(dateTime);
     return {
       'id': id,
       'userId': userId,
       'doctorId': doctorId,
-      'appointmentTime': Timestamp.fromDate(dateTime),
+      'appointmentTime': appointmentTimestamp,
+      'dateTime': appointmentTimestamp,
       'status': status,
       if (slotId != null) 'slotId': slotId,
     };

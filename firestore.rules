@@ -15,16 +15,35 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
+    function userDocExists() {
+      return signedIn()
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function role() {
-      return userDoc().data.role;
+      return userDocExists()
+          && 'role' in userDoc().data
+          ? userDoc().data.role
+          : null;
     }
 
     function hasAdminRole() {
-      return userDoc().data.role == 'admin' || userDoc().data.isAdmin == true;
+      return role() == 'admin'
+          || (userDocExists() && userDoc().data.isAdmin == true);
     }
 
     function isAdmin() {
       return signedIn() && (hasAdminRole() || isAdminEmail());
+    }
+
+    function isSuspendedAccount() {
+      return userDocExists()
+          && 'status' in userDoc().data
+          && userDoc().data.status == 'suspended';
+    }
+
+    function isActiveSignedIn() {
+      return signedIn() && !isSuspendedAccount();
     }
 
     function hasSystemSettings() {
@@ -41,36 +60,6 @@ service cloud.firestore {
             ('maintenance' in systemSettings() && systemSettings().maintenance.enabled == true)
             || ('maintenanceMode' in systemSettings() && systemSettings().maintenanceMode == true)
           );
-    }
-
-    function bookingEnabled() {
-      return !hasSystemSettings()
-          || !('booking' in systemSettings())
-          || systemSettings().booking.enabled != false;
-    }
-
-    function doctorBookingActionsEnabled() {
-      return !hasSystemSettings()
-          || !('booking' in systemSettings())
-          || systemSettings().booking.doctorBookingEnabled != false;
-    }
-
-    function minNoticeHours() {
-      return hasSystemSettings()
-          && 'booking' in systemSettings()
-          && systemSettings().booking.minNoticeHours is int
-          && systemSettings().booking.minNoticeHours >= 0
-          ? systemSettings().booking.minNoticeHours
-          : 2;
-    }
-
-    function cancellationDeadlineHours() {
-      return hasSystemSettings()
-          && 'booking' in systemSettings()
-          && systemSettings().booking.cancellationDeadlineHours is int
-          && systemSettings().booking.cancellationDeadlineHours >= 0
-          ? systemSettings().booking.cancellationDeadlineHours
-          : 3;
     }
 
     function allowNewPatients() {
@@ -110,13 +99,21 @@ service cloud.firestore {
       return s in ['pending', 'confirmed', 'accepted', 'rejected', 'completed', 'cancelled', 'no_show'];
     }
 
-    function isFinalStatus(s) {
-      return s in ['completed', 'no_show'];
+    function appointmentDoctorMatches(doc) {
+      return doc.doctorId == request.auth.uid
+          || doc.doctorUid == request.auth.uid
+          || doc.doctorUserId == request.auth.uid;
     }
 
-    function canFinalizeAppointment() {
-      return resource.data.appointmentTime is timestamp
-          && request.time >= resource.data.appointmentTime;
+    function appointmentPatientMatches(doc) {
+      return doc.userId == request.auth.uid
+          || doc.patientId == request.auth.uid
+          || doc.patientUid == request.auth.uid;
+    }
+
+    function appointmentDateProvided(doc) {
+      return doc.appointmentTime is timestamp
+          || doc.dateTime is timestamp;
     }
 
     function userEditableKeys() {
@@ -130,7 +127,13 @@ service cloud.firestore {
         'address',
         'dateOfBirth',
         'acceptedTermsVersion',
-        'termsAcceptedAt'
+        'termsAcceptedAt',
+        'themeMode',
+        'appearance',
+        'privacySettings',
+        'bookingPreferences',
+        'notificationSettings',
+        'preferredDoctorIds'
       ];
     }
 
@@ -158,6 +161,19 @@ service cloud.firestore {
           ]);
     }
 
+    function canSelfRequestDoctorDeletion(uid) {
+      return isSelf(uid)
+          && resource.data.role == 'doctor'
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.accountStatus == 'deletion_requested'
+          && request.resource.data.deletionRequestedAt == request.time
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'accountStatus',
+            'deletionRequestedAt',
+            'updatedAt'
+          ]);
+    }
+
     match /users/{uid} {
       allow read: if signedIn();
 
@@ -171,38 +187,41 @@ service cloud.firestore {
 
       allow update: if isAdmin()
           || canSelfSetInitialRole()
+          || canSelfRequestDoctorDeletion(uid)
           || (isSelf(uid)
               && request.resource.data.role == resource.data.role
               && request.resource.data.diff(resource.data).changedKeys().hasOnly(userEditableKeys()));
 
-      allow delete: if isAdmin();
+      allow delete: if isAdmin()
+          || (isSelf(uid) && resource.data.role != 'doctor');
     }
 
     match /doctors/{doctorId} {
       allow read: if signedIn();
-      allow create: if isAdmin() || (signedIn() && request.auth.uid == doctorId && doctorRegistrationAllowed());
-      allow update: if isAdmin() || (signedIn() && request.auth.uid == doctorId);
+      allow create: if isAdmin() || (isActiveSignedIn() && request.auth.uid == doctorId && doctorRegistrationAllowed());
+      allow update: if isAdmin() || (isActiveSignedIn() && request.auth.uid == doctorId);
       allow delete: if isAdmin();
     }
 
     match /appointments/{appointmentId} {
       allow read: if isAdmin()
           || (signedIn()
-              && (resource.data.userId == request.auth.uid
-                  || resource.data.doctorId == request.auth.uid));
+              && (
+                appointmentPatientMatches(resource.data)
+                || appointmentDoctorMatches(resource.data)
+              ));
 
       allow create: if signedIn()
-          && !maintenanceEnabled()
-          && bookingEnabled()
-          && request.resource.data.userId == request.auth.uid
+          && appointmentPatientMatches(request.resource.data)
           && (request.resource.data.status == null || isValidStatus(request.resource.data.status))
-          && request.resource.data.appointmentTime is timestamp
-          && request.resource.data.appointmentTime >= request.time + duration.value(minNoticeHours(), 'h');
+          && appointmentDateProvided(request.resource.data);
 
       allow update: if isAdmin()
           || (signedIn()
-              && request.auth.uid == resource.data.doctorId
-              && doctorBookingActionsEnabled()
+              && (
+                appointmentDoctorMatches(resource.data)
+                || role() == 'doctor'
+              )
               && (
                 (
                   isValidStatus(request.resource.data.status)
@@ -215,7 +234,6 @@ service cloud.firestore {
                     'statusUpdatedById',
                     'updatedAt'
                   ])
-                  && (!isFinalStatus(request.resource.data.status) || canFinalizeAppointment())
                 )
                 || (
                   request.resource.data.status == resource.data.status
@@ -226,12 +244,10 @@ service cloud.firestore {
                 )
               ))
           || (signedIn()
-              && request.auth.uid == resource.data.userId
+              && appointmentPatientMatches(resource.data)
               && request.resource.data.status == 'cancelled'
               && request.resource.data.statusUpdatedByRole == 'patient'
               && request.resource.data.statusUpdatedById == request.auth.uid
-              && resource.data.appointmentTime is timestamp
-              && request.time + duration.value(cancellationDeadlineHours(), 'h') <= resource.data.appointmentTime
               && request.resource.data.diff(resource.data).changedKeys().hasOnly([
                 'status',
                 'statusUpdatedByRole',
@@ -244,11 +260,9 @@ service cloud.firestore {
 
     function canBookSlot() {
       return signedIn()
-          && resource.data.isBooked == false
+          && resource.data.isBooked != true
           && request.resource.data.isBooked == true
           && request.resource.data.bookedBy == request.auth.uid
-          && request.resource.data.startTime == resource.data.startTime
-          && request.resource.data.endTime == resource.data.endTime
           && request.resource.data.diff(resource.data).changedKeys().hasOnly([
             'isBooked',
             'bookedBy',
@@ -269,7 +283,7 @@ service cloud.firestore {
     }
 
     match /settings/{docId} {
-      allow read: if signedIn();
+      allow read: if signedIn() || docId == 'system';
       allow write: if isAdmin();
     }
 
