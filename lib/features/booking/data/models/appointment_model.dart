@@ -9,6 +9,7 @@ class AppointmentModel extends AppointmentEntity {
     required super.dateTime,
     super.status,
     super.slotId,
+    super.payment,
   });
 
   factory AppointmentModel.fromMap(Map<String, dynamic> map) {
@@ -31,6 +32,7 @@ class AppointmentModel extends AppointmentEntity {
       dateTime: parsedDate,
       status: map['status'] as String? ?? 'pending',
       slotId: map['slotId'] as String?,
+      payment: _readMap(map['payment']),
     );
   }
 
@@ -44,6 +46,16 @@ class AppointmentModel extends AppointmentEntity {
       'dateTime': appointmentTimestamp,
       'status': status,
       if (slotId != null) 'slotId': slotId,
+      if (payment != null) 'payment': payment,
     };
+  }
+
+  static Map<String, dynamic>? _readMap(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry('$key', value));
+    }
+    return null;
   }
 }

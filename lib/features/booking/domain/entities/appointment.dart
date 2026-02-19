@@ -5,6 +5,7 @@ class AppointmentEntity {
   final DateTime dateTime;
   final String status;
   final String? slotId;
+  final Map<String, dynamic>? payment;
 
   AppointmentEntity({
     this.id,
@@ -13,5 +14,6 @@ class AppointmentEntity {
     required this.dateTime,
     this.status = 'pending',
     this.slotId,
+    this.payment,
   });
 }

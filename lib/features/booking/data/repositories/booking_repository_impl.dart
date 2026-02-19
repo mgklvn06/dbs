@@ -9,13 +9,16 @@ class BookingRepositoryImpl implements BookingRepository {
   BookingRepositoryImpl(this.remote);
 
   @override
-  Future<AppointmentEntity> bookAppointment(AppointmentEntity appointment) async {
+  Future<AppointmentEntity> bookAppointment(
+    AppointmentEntity appointment,
+  ) async {
     final model = AppointmentModel(
       userId: appointment.userId,
       doctorId: appointment.doctorId,
       dateTime: appointment.dateTime,
       status: appointment.status,
       slotId: appointment.slotId,
+      payment: appointment.payment,
     );
 
     final saved = await remote.createAppointment(model);
@@ -26,6 +29,7 @@ class BookingRepositoryImpl implements BookingRepository {
       dateTime: saved.dateTime,
       status: saved.status,
       slotId: saved.slotId,
+      payment: saved.payment,
     );
   }
 
@@ -33,29 +37,37 @@ class BookingRepositoryImpl implements BookingRepository {
   Future<List<AppointmentEntity>> getAppointmentsForUser(String userId) async {
     final models = await remote.getAppointmentsForUser(userId);
     return models
-        .map((m) => AppointmentEntity(
-              id: m.id,
-              userId: m.userId,
-              doctorId: m.doctorId,
-              dateTime: m.dateTime,
-              status: m.status,
-              slotId: m.slotId,
-            ))
+        .map(
+          (m) => AppointmentEntity(
+            id: m.id,
+            userId: m.userId,
+            doctorId: m.doctorId,
+            dateTime: m.dateTime,
+            status: m.status,
+            slotId: m.slotId,
+            payment: m.payment,
+          ),
+        )
         .toList();
   }
 
   @override
-  Future<List<AppointmentEntity>> getAppointmentsForDoctor(String doctorId) async {
+  Future<List<AppointmentEntity>> getAppointmentsForDoctor(
+    String doctorId,
+  ) async {
     final models = await remote.getAppointmentsForDoctor(doctorId);
     return models
-        .map((m) => AppointmentEntity(
-              id: m.id,
-              userId: m.userId,
-              doctorId: m.doctorId,
-              dateTime: m.dateTime,
-              status: m.status,
-              slotId: m.slotId,
-            ))
+        .map(
+          (m) => AppointmentEntity(
+            id: m.id,
+            userId: m.userId,
+            doctorId: m.doctorId,
+            dateTime: m.dateTime,
+            status: m.status,
+            slotId: m.slotId,
+            payment: m.payment,
+          ),
+        )
         .toList();
   }
 
@@ -63,19 +75,25 @@ class BookingRepositoryImpl implements BookingRepository {
   Future<List<AppointmentEntity>> getAllAppointments() async {
     final models = await remote.getAllAppointments();
     return models
-        .map((m) => AppointmentEntity(
-              id: m.id,
-              userId: m.userId,
-              doctorId: m.doctorId,
-              dateTime: m.dateTime,
-              status: m.status,
-              slotId: m.slotId,
-            ))
+        .map(
+          (m) => AppointmentEntity(
+            id: m.id,
+            userId: m.userId,
+            doctorId: m.doctorId,
+            dateTime: m.dateTime,
+            status: m.status,
+            slotId: m.slotId,
+            payment: m.payment,
+          ),
+        )
         .toList();
   }
 
   @override
-  Future<void> updateAppointmentStatus(String appointmentId, String status) async {
+  Future<void> updateAppointmentStatus(
+    String appointmentId,
+    String status,
+  ) async {
     return remote.updateAppointmentStatus(appointmentId, status);
   }
 }

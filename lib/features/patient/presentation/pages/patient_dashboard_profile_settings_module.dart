@@ -1,4 +1,4 @@
-﻿// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use
 
 part of 'patient_dashboard_page.dart';
 
@@ -316,12 +316,65 @@ class _ProfileSettingsModule extends StatelessWidget {
               const SizedBox(height: 14),
               AppCard(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    TextField(
-                      controller: photoController,
-                      decoration: const InputDecoration(
-                        labelText: 'Profile photo URL',
+                    Text(
+                      'Profile photo',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
+                    ),
+                    const SizedBox(height: 10),
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: photoController,
+                      builder: (context, value, _) {
+                        final imageUrl = value.text.trim();
+                        final hasImage = imageUrl.isNotEmpty;
+                        final theme = Theme.of(context);
+                        final placeholder = Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            Icons.person_outline,
+                            color: theme.colorScheme.primary,
+                          ),
+                        );
+
+                        return Row(
+                          children: [
+                            if (hasImage)
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(14),
+                                child: Image.network(
+                                  imageUrl,
+                                  width: 72,
+                                  height: 72,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      placeholder,
+                                ),
+                              )
+                            else
+                              placeholder,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                hasImage
+                                    ? 'Your uploaded profile photo is shown here.'
+                                    : 'No profile photo uploaded yet.',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurface
+                                      .withOpacity(0.65),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 12),
                     Align(
@@ -423,4 +476,3 @@ class _ProfileSettingsModule extends StatelessWidget {
     );
   }
 }
-

@@ -7,12 +7,14 @@ class BookAppointmentRequested extends BookingEvent {
   final String doctorId;
   final DateTime dateTime;
   final String? slotId;
+  final Map<String, dynamic>? payment;
 
   const BookAppointmentRequested({
     required this.userId,
     required this.doctorId,
     required this.dateTime,
     this.slotId,
+    this.payment,
   });
 }
 
@@ -36,5 +38,8 @@ class UpdateAppointmentStatusRequested extends BookingEvent {
   final String appointmentId;
   final String status;
 
-  const UpdateAppointmentStatusRequested({required this.appointmentId, required this.status});
+  const UpdateAppointmentStatusRequested({
+    required this.appointmentId,
+    required this.status,
+  });
 }

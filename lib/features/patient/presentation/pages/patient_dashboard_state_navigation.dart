@@ -19,6 +19,57 @@ extension _PatientDashboardPageStateNavigationExt
     });
   }
 
+  void _consumeAppointmentStatusUpdates(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final nextStatuses = <String, String>{};
+    var confirmedUpdates = 0;
+
+    for (final doc in docs) {
+      final id = doc.id;
+      final data = doc.data();
+      final status = ((data['status'] as String?) ?? 'pending')
+          .trim()
+          .toLowerCase();
+      nextStatuses[id] = status;
+
+      final wasStatus = _appointmentStatusById[id];
+      final isNowConfirmed = status == 'confirmed' || status == 'accepted';
+      final wasConfirmed = wasStatus == 'confirmed' || wasStatus == 'accepted';
+
+      if (_appointmentWatcherInitialized &&
+          isNowConfirmed &&
+          !wasConfirmed &&
+          !_shownConfirmationFor.contains(id)) {
+        _shownConfirmationFor.add(id);
+        confirmedUpdates += 1;
+      }
+    }
+
+    _appointmentStatusById
+      ..clear()
+      ..addAll(nextStatuses);
+
+    if (!_appointmentWatcherInitialized) {
+      _appointmentWatcherInitialized = true;
+      return;
+    }
+
+    if (!_notifyBookingConfirmations || confirmedUpdates == 0 || !mounted) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final message = confirmedUpdates == 1
+          ? 'Your appointment was confirmed by the doctor.'
+          : '$confirmedUpdates appointments were confirmed by doctors.';
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text(message)));
+    });
+  }
+
   Widget _buildPage(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -26,98 +77,131 @@ extension _PatientDashboardPageStateNavigationExt
     }
 
     final theme = Theme.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 980;
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('appointments')
+          .where('userId', isEqualTo: user.uid)
+          .snapshots(),
+      builder: (context, appointmentsSnap) {
+        if (appointmentsSnap.hasData) {
+          _consumeAppointmentStatusUpdates(appointmentsSnap.data!.docs);
+        }
 
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(_navItems[_selectedIndex].label),
-            automaticallyImplyLeading: !isWide,
-            actions: [
-              IconButton(
-                tooltip: 'Refresh',
-                icon: const Icon(Icons.refresh),
-                onPressed: () {
-                  if (_selectedIndex == 0) {
-                    _refreshDashboard();
-                  } else {
-                    setState(() {});
-                  }
-                },
-              ),
-              const UserThemeToggleButton(),
-              IconButton(
-                tooltip: 'Sign out',
-                icon: const Icon(Icons.logout),
-                onPressed: () async {
-                  await FirebaseAuth.instance.signOut();
-                  if (!mounted) return;
-                  Navigator.pushReplacementNamed(context, Routes.landing);
-                },
-              ),
-              const SizedBox(width: 8),
-            ],
-          ),
-          drawer: isWide
-              ? null
-              : Drawer(child: _buildSidebar(context, inDrawer: true)),
-          body: AppBackground(
-            child: Row(
-              children: [
-                if (isWide)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 10, 20),
-                    child: SizedBox(
-                      width: 260,
-                      child: _buildSidebar(context, inDrawer: false),
-                    ),
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 980;
+
+            return Scaffold(
+              appBar: AppBar(
+                title: Text(_navItems[_selectedIndex].label),
+                automaticallyImplyLeading: !isWide,
+                actions: [
+                  IconButton(
+                    tooltip: 'Help Center',
+                    icon: const Icon(Icons.help_outline),
+                    onPressed: () => Navigator.pushNamed(context, Routes.help),
                   ),
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(isWide ? 10 : 20, 20, 20, 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (isWide)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 14),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    _navItems[_selectedIndex].label,
-                                    style: theme.textTheme.headlineSmall
-                                        ?.copyWith(fontWeight: FontWeight.w700),
-                                  ),
-                                ),
-                                _QuickActionChip(
-                                  label: 'Find doctors',
-                                  icon: Icons.search,
-                                  onTap: () => _selectModule(1),
-                                ),
-                                const SizedBox(width: 10),
-                                _QuickActionChip(
-                                  label: 'My appointments',
-                                  icon: Icons.event_note_outlined,
-                                  onTap: () => _selectModule(2),
-                                ),
-                              ],
-                            ),
-                          ),
-                        Expanded(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 220),
-                            child: _buildModule(context),
-                          ),
+                  IconButton(
+                    tooltip: 'Refresh',
+                    icon: const Icon(Icons.refresh),
+                    onPressed: () {
+                      if (_selectedIndex == 0) {
+                        _refreshDashboard();
+                      } else {
+                        setState(() {});
+                      }
+                    },
+                  ),
+                  const UserThemeToggleButton(),
+                  IconButton(
+                    tooltip: 'Sign out',
+                    icon: const Icon(Icons.logout),
+                    onPressed: () async {
+                      await FirebaseAuth.instance.signOut();
+                      if (!mounted) return;
+                      Navigator.pushReplacementNamed(context, Routes.landing);
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ),
+              drawer: isWide
+                  ? null
+                  : Drawer(child: _buildSidebar(context, inDrawer: true)),
+              body: AppBackground(
+                child: Row(
+                  children: [
+                    if (isWide)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 20, 10, 20),
+                        child: SizedBox(
+                          width: 260,
+                          child: _buildSidebar(context, inDrawer: false),
                         ),
-                      ],
+                      ),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          isWide ? 10 : 20,
+                          20,
+                          20,
+                          20,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (isWide)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 14),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        _navItems[_selectedIndex].label,
+                                        style: theme.textTheme.headlineSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    ),
+                                    _QuickActionChip(
+                                      label: 'Find doctors',
+                                      icon: Icons.search,
+                                      onTap: () => _selectModule(1),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    _QuickActionChip(
+                                      label: 'My appointments',
+                                      icon: Icons.event_note_outlined,
+                                      onTap: () => _selectModule(2),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    _QuickActionChip(
+                                      label: 'Help',
+                                      icon: Icons.help_outline,
+                                      onTap: () => Navigator.pushNamed(
+                                        context,
+                                        Routes.help,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            Expanded(
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 220),
+                                child: _buildModule(context),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -178,6 +262,15 @@ extension _PatientDashboardPageStateNavigationExt
                 if (inDrawer) Navigator.pop(context);
               },
             ),
+          const SizedBox(height: 6),
+          TextButton.icon(
+            onPressed: () {
+              if (inDrawer) Navigator.pop(context);
+              Navigator.pushNamed(context, Routes.help);
+            },
+            icon: const Icon(Icons.help_outline),
+            label: const Text('Help Center'),
+          ),
           const Spacer(),
           if (user != null)
             Padding(

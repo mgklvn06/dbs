@@ -85,6 +85,9 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
   bool _notifySystemAnnouncements = true;
   Set<String> _preferredDoctorIds = <String>{};
   bool _isAccountActionRunning = false;
+  bool _appointmentWatcherInitialized = false;
+  final Map<String, String> _appointmentStatusById = <String, String>{};
+  final Set<String> _shownConfirmationFor = <String>{};
   late Future<_PatientDashboardMetrics> _metricsFuture;
 
   @override
