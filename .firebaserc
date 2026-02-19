@@ -1,6 +1,7 @@
 {
   "projects": {
-    "firebase deploy --only firestore:indexes": "doctor-booking-system-ef2c8"
+    "firebase deploy --only firestore:indexes": "doctor-booking-system-ef2c8",
+    "default": "doctor-booking-system-ef2c8"
   },
   "targets": {},
   "etags": {}
